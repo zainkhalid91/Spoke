@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="items.js"></script></head><body>
+<script>
+shell("Clipboard",`
+<h1>Clipboard</h1><div class="sub">History is encrypted on this PC (tied to your Windows account) and never leaves it.</div>
+<div class="card">
+ <div class="row"><span class="k">Keep clipboard history</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Keep items for</span><span class="sel">30 days</span></div>
+ <div class="row"><span class="k">Maximum items</span><span class="sel">2,000</span></div>
+ <div class="row"><span class="k">Save images<small>Up to 20 MB per image</small></span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Skip copies marked private by password managers<small>Always on</small></span><span class="tog on" style="opacity:.6"></span></div>
+</div>
+<div class="card">
+ <div style="font:600 13px var(--ui);margin-bottom:8px">Never record from these apps</div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap">
+  <span class="chip">KeePassXC.exe ✕</span><span class="chip">1Password.exe ✕</span><span class="chip">Bitwarden.exe ✕</span><span class="chip">mstsc.exe ✕</span><span class="btn">+ Add app</span>
+ </div>
+</div>
+<div class="card">
+ <div class="row"><span class="k">Pause history for…</span><span class="sel">15 minutes</span><span class="btn">Pause</span></div>
+ <div class="row"><span class="k">1,284 items · 46 MB</span><span class="btn">Export pinned</span><span class="btn" style="color:#fb7185">Clear history…</span></div>
+</div>`,"11 · Settings → Clipboard");
+</script></body></html>

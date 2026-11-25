@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script><script src="items.js"></script>
+<style>.sw-c{width:26px;height:26px;border-radius:50%;display:inline-block;border:2px solid transparent}.sw-c.on{border-color:#fff}.seg{display:inline-flex;border:1px solid var(--g3);border-radius:6px;overflow:hidden}.seg span{padding:6px 12px;font-size:12px;color:var(--tx2);border-right:1px solid var(--g3)}.seg span:last-child{border:0}.seg .on{background:#2a2e36;color:var(--tx)}</style></head><body>
+<script>
+shell("Appearance",`
+<h1>Appearance</h1><div class="sub">Applies to the selected wheel, or to all wheels.</div>
+<div style="display:flex;gap:18px">
+<div style="width:520px">
+<div class="card">
+ <div class="row"><span class="k">Apply to</span><div class="seg"><span class="on">All wheels</span><span>Dev only</span></div></div>
+ <div class="row"><span class="k">Size</span><div class="seg"><span>S</span><span class="on">M</span><span>L</span><span>Custom</span></div></div>
+ <div class="row"><span class="k">Slices</span><div class="seg"><span>4</span><span>6</span><span class="on">8</span><span>10</span><span>12</span></div></div>
+ <div class="row"><span class="k">Accent</span><span class="sw-c on" style="background:#f5a524"></span><span class="sw-c" style="background:#2dd4bf"></span><span class="sw-c" style="background:#fb7185"></span><span class="sw-c" style="background:#a78bfa"></span><span class="sw-c" style="background:#a3e635"></span><span class="sw-c" style="background:#93c5fd"></span><span class="btn">Custom…</span></div>
+ <div class="row"><span class="k">Opacity</span><div class="slider"><b style="width:92%"></b><i style="left:92%"></i></div><span class="mono" style="font-size:12px">92%</span></div>
+ <div class="row"><span class="k">Dim screen behind</span><div class="slider"><b style="width:35%"></b><i style="left:35%"></i></div><span class="mono" style="font-size:12px">35%</span></div>
+ <div class="row"><span class="k">Blur behind wheel<small>Acrylic; slightly more GPU</small></span><span class="tog"></span></div>
+ <div class="row"><span class="k">Animation</span><div class="seg"><span>None</span><span class="on">Subtle</span><span>Springy</span></div></div>
+ <div class="row"><span class="k">Icons</span><div class="seg"><span class="on">App icons</span><span>Mono glyphs</span></div></div>
+ <div class="row"><span class="k">Labels</span><div class="seg"><span class="on">Mono caps</span><span>Regular</span><span>Hidden</span></div></div>
+ <div class="row"><span class="k">Renderer<small>Auto switches to CPU if the GPU is saturated (e.g. a local LLM)</small></span><div class="seg"><span class="on">Auto</span><span>GPU</span><span>CPU</span></div></div>
+</div></div>
+<div style="flex:1;position:relative"><div class="mono" style="font-size:11px;color:var(--tx3);letter-spacing:.08em">LIVE PREVIEW</div></div>
+</div>`,"09 · Settings → Appearance");
+spokeWheel(document.body,{cx:1010,cy:380,rOut:130,rIn:58,hubSize:46,items:DEV_ITEMS(),hover:2,hub:{t:"REPOS",s:"FOLDER"}});
+</script></body></html>

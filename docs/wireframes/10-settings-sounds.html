@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="items.js"></script>
+<style>.th{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}.th div{border:1px solid #2a2e36;border-radius:8px;padding:14px;background:#1b1e23}.th .on{border-color:var(--acc)}.th b{display:block;font:600 14px var(--ui);margin-bottom:4px}.th small{font-size:12px;color:var(--tx3)}.wave{height:26px;margin-top:10px;background:repeating-linear-gradient(90deg,#3a3f4a 0 2px,transparent 2px 5px);mask:linear-gradient(90deg,transparent,#000 20%,#000 50%,transparent)}</style></head><body>
+<script>
+shell("Sounds",`
+<h1>Sounds</h1><div class="sub">Short, quiet cues. Off by default. Played from memory, so there's no lag.</div>
+<div class="th">
+ <div><b>Off</b><small>Silent</small></div>
+ <div class="on"><b>Soft click</b><small>Felt-tip taps</small><div class="wave"></div></div>
+ <div><b>Mechanical</b><small>Keyboard switch</small><div class="wave"></div></div>
+ <div><b>Glass</b><small>Light chimes</small><div class="wave"></div></div>
+</div>
+<div class="card">
+ <div class="row"><span class="k">Volume</span><div class="slider"><b style="width:60%"></b><i style="left:60%"></i></div><span class="mono" style="font-size:12px">60%</span></div>
+ <div class="row"><span class="k">Wheel opens</span><span class="btn">▶</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Hover moves to a slice</span><span class="btn">▶</span><span class="tog"></span></div>
+ <div class="row"><span class="k">Action runs</span><span class="btn">▶</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Error / blocked</span><span class="btn">▶</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Conversion finished</span><span class="btn">▶</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Mute while Focus / Do not disturb is on</span><span class="tog on"></span></div>
+</div>`,"10 · Settings → Sounds");
+</script></body></html>

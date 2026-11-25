@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script></head><body>
+<div class="label-tag">05 · File drop — converting a video, then the result toast</div>
+<script>
+desk(document.body);
+const items=[{label:"MP4"},{label:"WEBM"},{label:"MOV"},{label:"MKV"},{label:"GIF"},{label:"MUTE"},{label:"AUDIO",fan:1},{label:"MP3"}].map((x,i)=>i==1?x:Object.assign(x,{ghost:1}));
+spokeWheel(document.body,{cx:520,cy:370,items,hover:1,hub:{t:"WEBM",s:"CLIP.MOV · 62%",s2:"ESC = CANCEL",prog:.62},numbers:false});
+document.body.insertAdjacentHTML("beforeend",`
+<div style="position:absolute;right:24px;bottom:64px;width:360px;background:#1b1e24;border:1px solid #2a2e36;border-radius:10px;padding:14px 16px;box-shadow:0 10px 30px #000a">
+ <div style="display:flex;gap:12px;align-items:center"><div class="ph" style="width:56px;height:40px"></div>
+ <div style="flex:1"><div style="font:600 13px var(--ui)">clip (Spoke).webm</div><div class="mono" style="font-size:11px;color:#9aa0ab;margin-top:3px">48.2 MB → 9.7 MB · −80%</div></div></div>
+ <div style="display:flex;gap:8px;margin-top:12px"><span class="btn pri">Open</span><span class="btn">Show in folder</span><span class="btn" style="margin-left:auto">✕</span></div>
+</div>`);
+</script>
+<div class="note" style="left:900px;top:70px"><b>While converting</b>: the wheel stays where you dropped the file, the other slices grey out, and the hub shows a <b>progress ring</b>. Esc cancels and deletes the partial file.</div>
+<div class="note" style="left:900px;top:210px">You can click away; the job keeps running, and the tray icon shows a small progress dot.</div>
+<div class="note" style="left:900px;top:330px"><b>Result toast</b> (bottom-right): new file name, <b>size before → after</b>, Open / Show in folder. Never overwrites; saved as “name (Spoke).ext”.</div>
+</body></html>

@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>body{background:#0c0d10;color:#e7e9ee;font-family:"Cascadia Mono",Consolas,monospace;margin:0;padding:24px 32px;width:1216px}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#9aa0ab;font-weight:600;margin:0 0 18px}
+.mermaid{display:flex;justify-content:center}</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script></head><body>
+<h2>Flow 7. Settings app</h2><pre class="mermaid">flowchart LR
+  T[Tray → Settings&lt;br/&gt;or double-click tray icon] --&gt; S[SpokeSettings.exe]
+  S --&gt; W[Wheels]
+  S --&gt; TR[Triggers]
+  S --&gt; AP[Appearance]
+  S --&gt; SO[Sounds]
+  S --&gt; CL[Clipboard]
+  S --&gt; GA[Gallery]
+  S --&gt; GE[General]
+  S --&gt; LI[License]
+  W --&gt; W1[Wheel list: add · duplicate · export · import · delete]
+  W --&gt; W2[Live preview: drag slices to reorder,&lt;br/&gt;drop apps/files/URLs onto it]
+  W --&gt; W3[Slice inspector: type · target · label · icon · colour · sub-actions · run-all]
+  TR --&gt; TR1[Per-wheel hotkey + tap/hold] &amp; TR2[Hot corners per monitor] &amp; TR3[Shake] &amp; TR4[Mouse buttons]
+  AP --&gt; AP1[Size · slices · accent · opacity · blur · animation · icons · renderer]
+  SO --&gt; SO1[Theme · volume · per-event toggles · preview]
+  CL --&gt; CL1[On/off · retention · max items · excluded apps · clear all]
+  GA --&gt; GA1[Starter wheels → Add]
+  GE --&gt; GE1[Start with Windows · language · run elevated · logs · reset]
+  W2 -. saves .-&gt; CFG[(settings.json)] -. pipe 'reload' .-&gt; D[Daemon applies &lt; 200 ms]
+</pre>
+<script>mermaid.initialize({startOnLoad:true,theme:"base",themeVariables:{darkMode:true,background:"#0c0d10",primaryColor:"#1b1e24",primaryBorderColor:"#3a3f4a",primaryTextColor:"#e7e9ee",lineColor:"#f5a524",secondaryColor:"#16181c",tertiaryColor:"#121418",noteBkgColor:"#22252c",noteTextColor:"#e7e9ee",noteBorderColor:"#f5a524",actorBkg:"#1b1e24",actorBorder:"#f5a524",actorTextColor:"#e7e9ee",signalColor:"#e7e9ee",signalTextColor:"#e7e9ee",labelBoxBkgColor:"#1b1e24",fontFamily:"Cascadia Mono, Consolas, monospace",fontSize:"14px"},flowchart:{useMaxWidth:true},state:{useMaxWidth:true}});</script>
+</body></html>

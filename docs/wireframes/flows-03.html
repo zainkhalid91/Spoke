@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>body{background:#0c0d10;color:#e7e9ee;font-family:"Cascadia Mono",Consolas,monospace;margin:0;padding:24px 32px;width:1216px}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#9aa0ab;font-weight:600;margin:0 0 18px}
+.mermaid{display:flex;justify-content:center}</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script></head><body>
+<h2>Flow 3. Sub-actions (fan-out)</h2><pre class="mermaid">flowchart LR
+  A[Hover slice 'Search ▸'] --&gt;|150 ms or →| B[Up to 4 petals fan out&lt;br/&gt;beyond the slice's rim]
+  B --&gt; C{Choose}
+  C --&gt;|click petal / 1–4| D[Run petal action]
+  C --&gt;|← or pointer back to ring| A
+  C --&gt;|Esc| E[Close wheel]
+  A --&gt;|slice set to 'Run all'| F[Runs all child actions in order&lt;br/&gt;hub shows 1/3, 2/3, 3/3]
+</pre>
+<script>mermaid.initialize({startOnLoad:true,theme:"base",themeVariables:{darkMode:true,background:"#0c0d10",primaryColor:"#1b1e24",primaryBorderColor:"#3a3f4a",primaryTextColor:"#e7e9ee",lineColor:"#f5a524",secondaryColor:"#16181c",tertiaryColor:"#121418",noteBkgColor:"#22252c",noteTextColor:"#e7e9ee",noteBorderColor:"#f5a524",actorBkg:"#1b1e24",actorBorder:"#f5a524",actorTextColor:"#e7e9ee",signalColor:"#e7e9ee",signalTextColor:"#e7e9ee",labelBoxBkgColor:"#1b1e24",fontFamily:"Cascadia Mono, Consolas, monospace",fontSize:"14px"},flowchart:{useMaxWidth:true},state:{useMaxWidth:true}});</script>
+</body></html>

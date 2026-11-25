@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script></head><body>
+<div class="label-tag">06 · Clipboard history wheel</div>
+<script>
+desk(document.body);document.body.insertAdjacentHTML("beforeend",'<div class="dim"></div>');
+const items=[{label:"TEXT · 2m",text:"\"meeting at 4\""},{label:"LINK · 5m",text:"github.com/…"},{label:"IMAGE · 9m",thumb:1},{label:"JSON · 12m",text:"{\"id\":42,…"},{label:"TEXT · 1h",text:"Thanks for…"},{label:"PATH · 1h",text:"D:\\Projects"},{label:"PINNED ★",text:"+1 555 …"},{label:"CODE · 3h",text:"git rebase"}];
+spokeWheel(document.body,{cx:560,cy:340,items,hover:3,hubSize:66,hub:{t:"JSON · 12m",s:"FROM: POSTMAN",s2:"184 CHARS"}});
+wheelRow(document.body,560,555,["Dev","Browser","Clips","Media"],2);
+const tools=["PLAIN","UPPER","lower","TRIM","FORMAT JSON","COUNT","BASE64","CALC","OCR","SEARCH","TRANSLATE","EMAIL"];
+document.body.insertAdjacentHTML("beforeend",
+'<div style="position:absolute;left:560px;top:598px;transform:translateX(-50%);display:flex;gap:6px;font:11px Cascadia Mono,Consolas;letter-spacing:.05em;white-space:nowrap">'+
+tools.map((t,i)=>'<span style="padding:5px 9px;border-radius:5px;border:1px solid '+(i==4?'#f5a524':'#2a2e36')+';color:'+(i==4?'#fff':'#9aa0ab')+';background:#16181c">'+t+'</span>').join("")+'</div>'+
+'<div style="position:absolute;left:870px;top:200px;width:300px;background:#121418;border:1px solid #2a2e36;border-radius:8px;padding:12px;font:11.5px/1.5 Cascadia Mono,Consolas;color:#c9ccd3;white-space:pre">{"id":42,"name":"spoke",\n "tags":["wheel","win"],\n "ok":true}</div>');
+cursor(document.body,690,380);
+</script>
+<div class="note" style="left:870px;top:300px;max-width:300px"><b>Full preview</b> of the hovered clip floats beside the wheel (text, image thumbnail, or file list).</div>
+<div class="note" style="left:870px;top:400px;max-width:300px">Click / <b>1–8</b> = paste into the focused app (the clipboard is restored afterwards). <b>Shift+click</b> = select the clip for a tool. <b>P</b> pins. <b>Type</b> to filter. <b>PgDn</b> shows older clips.</div>
+<div class="note" style="left:40px;top:60px;max-width:250px"><b>Tools row</b>: acts on the selected clip, or on the newest one. The result is pasted, or copied if the target window is elevated.</div>
+<div class="note" style="left:40px;top:190px;max-width:250px">Skips password-manager copies (exclusion formats) and any apps you exclude. Stored <b>encrypted</b> on this PC only.</div>
+</body></html>

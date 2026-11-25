@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script><script src="items.js"></script>
+<style>.gal{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.gc{border:1px solid #2a2e36;border-radius:10px;background:#1b1e23;height:250px;position:relative;padding:12px}.gc b{font:600 14px var(--ui)}.gc small{display:block;font-size:12px;color:var(--tx3);margin-top:2px}.gc .btn{position:absolute;left:12px;bottom:12px}.gc .chip{position:absolute;right:12px;bottom:16px}</style></head><body>
+<script>
+const G=[["Dev","Editor, terminal, repos, docs search","8"],["Browser","Tabs, history, private window, sites","8"],["Writing","Dates, signatures, case tools","6"],["Media","Play, next, volume, mute, screenshot","8"],["Windows","Lock, sleep, settings, task manager","8"],["Design","Colour picker, screenshot, converters","6"],["Meetings","Mic mute, camera, join links","6"],["Clipboard","History + tools","auto"]];
+shell("Gallery",`<h1>Gallery</h1><div class="sub">Starter wheels. Add one, then make it yours. Bundled with the app, so it works offline.</div>
+<div class="gal">${G.map(g=>`<div class="gc"><b>${g[0]}</b><small>${g[1]}</small><span class="btn ${g[0]=="Dev"?"":"pri"}">${g[0]=="Dev"?"Added ✓":"+ Add"}</span><span class="chip">${g[2]} SLICES</span></div>`).join("")}</div>
+<div style="margin-top:14px;font:12px var(--mono);color:var(--tx3)">Or drop a <span style="color:var(--tx)">.spoke</span> file here to import a wheel someone shared.</div>`,"12 · Settings → Gallery");
+const xs=[0,1,2,3],ys=[0,1];let k=0;
+for(const y of ys)for(const x of xs){spokeWheel(document.body,{cx:390+x*236,cy:318+y*262,rOut:62,rIn:26,hubSize:21,numbers:false,items:Array.from({length:8},()=>({label:""})),hover:null,hub:{t:"",s:""}});k++;}
+</script></body></html>

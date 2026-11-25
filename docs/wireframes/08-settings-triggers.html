@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="items.js"></script>
+<style>.mon{position:relative;width:250px;height:150px;border:1.5px solid var(--g4);border-radius:6px;background:#121418}
+.mon .c{position:absolute;width:44px;height:44px;border:1.5px dashed var(--g3);border-radius:4px;font:10px var(--mono);color:var(--tx3);display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2}
+.mon .c.on{border:1.5px solid var(--acc);color:var(--tx);background:#f5a52418}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}</style></head><body>
+<script>
+shell("Triggers",`
+<h1>Triggers</h1><div class="sub">How each wheel opens. Conflicts are checked live when you record a key.</div>
+<div class="card">
+ <div style="font:600 13px var(--ui);margin-bottom:6px">Keyboard shortcuts</div>
+ <div class="row"><span class="k">Dev<small>Tap opens · tap again closes</small></span><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">Space</span><span class="sel" style="min-width:110px">Tap</span><span class="btn">Record</span></div>
+ <div class="row"><span class="k">Browser</span><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">B</span><span class="sel" style="min-width:110px">Hold & release</span><span class="btn">Record</span></div>
+ <div class="row"><span class="k">Clips<small style="color:#fb7185">⚠ Win+V is used by Windows clipboard. Try Ctrl+Alt+V?</small></span><span class="kbd">Win</span><span class="kbd">V</span><span class="sel" style="min-width:110px">Tap</span><span class="btn pri">Use Ctrl+Alt+V</span></div>
+</div>
+<div class="two">
+ <div class="card">
+  <div style="font:600 13px var(--ui);margin-bottom:8px">Hot corners <span class="chip" style="margin-left:6px">MONITOR 1 · 150%</span> <span class="chip">MONITOR 2</span></div>
+  <div style="display:flex;gap:14px">
+   <div class="mon"><div class="c on" style="left:-1px;top:-1px">Dev</div><div class="c" style="right:-1px;top:-1px">—</div><div class="c" style="left:-1px;bottom:-1px">—</div><div class="c on" style="right:-1px;bottom:-1px">Clips</div></div>
+   <div style="flex:1;font-size:13px;color:var(--tx2);display:flex;flex-direction:column;gap:8px">
+    <div>Dwell <span class="mono" style="color:var(--tx)">250 ms</span></div><div class="slider" style="flex:none;width:160px"><b style="width:30%"></b><i style="left:30%"></i></div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="tog on"></span>Ignore when an app is fullscreen</div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="tog on"></span>Corner opens drop mode while dragging a file</div>
+   </div>
+  </div>
+ </div>
+ <div class="card">
+  <div style="font:600 13px var(--ui);margin-bottom:6px">Pointer</div>
+  <div class="row"><span class="k">Shake to open<small>Shake the pointer left-right quickly</small></span><span class="sel" style="min-width:100px">Dev</span><span class="tog on"></span></div>
+  <div class="row"><span class="k">Shake sensitivity</span><div class="slider" style="flex:0 0 140px"><b style="width:55%"></b><i style="left:55%"></i></div></div>
+  <div class="row"><span class="k">Middle button hold (200 ms)<small>A normal middle-click still works</small></span><span class="sel" style="min-width:100px">Browser</span><span class="tog"></span></div>
+  <div class="row"><span class="k">Side buttons X1 / X2</span><span class="sel" style="min-width:100px">Off</span><span class="tog"></span></div>
+ </div>
+</div>
+<div style="font:11px var(--mono);color:var(--tx3);margin-top:4px">Pointer triggers use a low-level mouse hook that is only installed while one of them is on.</div>
+`,"08 · Settings → Triggers");
+</script></body></html>

@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script><script src="items.js"></script></head><body>
+<div class="label-tag">02 · Wheel open — slice hovered</div>
+<script>
+desk(document.body);document.body.insertAdjacentHTML("beforeend",'<div class="dim"></div>');
+spokeWheel(document.body,{cx:640,cy:380,items:DEV_ITEMS(),hover:1,hub:{t:"TERMINAL",s:"APP · WT.EXE",s2:"2 · ENTER"}});
+wheelRow(document.body,640,600,["Dev","Browser","Clips","Media"],0);
+cursor(document.body,712,262);
+</script>
+<div class="note" style="left:930px;top:70px"><b>The spoke</b>: a needle from the hub points at the hovered slice. It follows the pointer's <b>angle</b>, not its exact position.</div>
+<div class="note" style="left:930px;top:190px">Hovered slice <b>lifts outward ~10px</b>; its <b>inner edge</b> lights in the wheel accent. Outer rim stays neutral.</div>
+<div class="note" style="left:930px;top:310px">Hub shows <b>label + action type + key</b> in monospace caps.</div>
+<div class="note" style="left:930px;top:410px"><b>Click past the ring</b>: pointer far beyond the rim in this direction still selects TERMINAL; the whole monitor is the hit area.</div>
+<div class="note" style="left:60px;top:540px">Choose: <b>click</b> · <b>click past ring</b> · <b>2</b> · <b>←/→ then Enter</b> · hold-mode: <b>release</b>. Esc closes.</div>
+</body></html>

@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="items.js"></script>
+<style>.plans{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:700px}.plan{border:1px solid #2a2e36;border-radius:10px;padding:18px;background:#1b1e23}.plan.on{border-color:var(--acc)}.plan .p{font:600 28px var(--ui);margin:8px 0}</style></head><body>
+<script>
+shell("License",`
+<h1>License</h1><div class="sub">Trial: 5 of 7 days left. Everything is unlocked during the trial.</div>
+<div class="plans">
+ <div class="plan on"><span class="chip">LIFETIME</span><div class="p">$ —</div><div style="color:var(--tx2);font-size:13px">One payment. All v1 updates. 3 PCs.</div><div style="margin-top:14px"><span class="btn pri">Buy lifetime</span></div></div>
+ <div class="plan"><span class="chip">WEEKLY</span><div class="p">$ — / wk</div><div style="color:var(--tx2);font-size:13px">Cancel any time.</div><div style="margin-top:14px"><span class="btn">Subscribe</span></div></div>
+</div>
+<div class="card" style="max-width:700px;margin-top:14px">
+ <div class="row"><span class="k">Have a key?</span><span class="inp" style="min-width:300px">SPOKE-XXXX-XXXX-XXXX</span><span class="btn">Activate</span></div>
+ <div class="row"><span class="k">Keys are checked offline. Nothing about your usage is sent.</span></div>
+</div>`,"14 · Settings → License (prices TBD)");
+</script>
+<div class="note" style="left:820px;top:150px;max-width:330px"><b>Store build</b>: the buttons open the Microsoft Store purchase dialog (add-ons).<br><b>Direct build</b>: opens checkout in the browser; the key arrives by email.</div>
+</body></html>

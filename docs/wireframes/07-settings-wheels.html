@@ -1,0 +1,62 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script><script src="items.js"></script>
+<style>
+.cols{display:flex;gap:16px;height:100%}
+.wl{width:170px;display:flex;flex-direction:column;gap:6px}
+.wl .w{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid #262a31;font:13px var(--ui);color:var(--tx2)}
+.wl .w i{width:10px;height:10px;border-radius:50%}
+.wl .w.on{background:#22252c;color:var(--tx);border-color:#3a3f4a}
+.wl .w small{margin-left:auto;font:10px var(--mono);color:var(--tx3)}
+.ctr{flex:1;position:relative}
+.ins{width:300px;border-left:1px solid #23262c;padding-left:16px;display:flex;flex-direction:column;gap:7px;padding-bottom:70px}
+.ins label{font:11px var(--mono);letter-spacing:.08em;color:var(--tx3);text-transform:uppercase;margin-bottom:-4px}
+.list{position:absolute;left:0;right:0;top:318px}
+.li{display:flex;align-items:center;gap:10px;height:28px;padding:0 10px;border-bottom:1px solid #22252b;font-size:13px;color:var(--tx2);background:#16181c}
+.li .h{color:var(--tx3);font-family:var(--mono);cursor:grab}
+.li .n{font:11px var(--mono);color:var(--tx3);width:14px}
+.li .t{margin-left:auto;font:11px var(--mono);color:var(--tx3)}
+.li.drag{position:relative;left:18px;top:-6px;background:#262a32;border:1px solid var(--acc);border-radius:6px;box-shadow:0 10px 24px #000b;color:var(--tx);z-index:2}
+.li.gapline{height:3px;background:var(--acc);padding:0;border:0;margin:0 10px;border-radius:2px}
+.tb{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+</style></head><body>
+<script>
+shell("Wheels",`
+<div class="tb"><h1 style="margin:0">Wheels</h1><span class="chip" style="margin-left:10px">SAVED · LIVE</span><span style="margin-left:auto" class="btn">Import .spoke</span><span class="btn">Export</span><span class="btn pri">+ New wheel</span></div>
+<div class="cols">
+ <div class="wl">
+  <div class="w on"><i style="background:#f5a524"></i>Dev<small>8</small></div>
+  <div class="w"><i style="background:#2dd4bf"></i>Browser<small>6</small></div>
+  <div class="w"><i style="background:#a78bfa"></i>Clips<small>auto</small></div>
+  <div class="w"><i style="background:#fb7185"></i>Media<small>8</small></div>
+  <div class="w" style="border-style:dashed;color:var(--tx3)">+ From Gallery</div>
+ </div>
+ <div class="ctr">
+  <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--tx3)"><span class="mono">PREVIEW</span><span style="margin-left:auto">Slices</span><span class="sel" style="min-width:60px">8</span><span>Hotkey</span><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">Space</span></div>
+  <div class="list">
+   <div class="li"><span class="h">⋮⋮</span><span class="n">1</span>VS Code<span class="t">APP</span></div>
+   <div class="li"><span class="h">⋮⋮</span><span class="n">2</span>Terminal<span class="t">APP</span></div>
+   <div class="li gapline"></div>
+   <div class="li drag"><span class="h">⋮⋮</span><span class="n">5</span>GitHub<span class="t">URL · dragging</span></div>
+   <div class="li"><span class="h">⋮⋮</span><span class="n">3</span>Repos<span class="t">FOLDER</span></div>
+   <div class="li"><span class="h">⋮⋮</span><span class="n">4</span>Search ▸ (4)<span class="t">SUB-ACTIONS</span></div>
+   <div class="li"><span class="h">⋮⋮</span><span class="n">6</span>Snip<span class="t">SCREENSHOT</span></div>
+   <div class="li"><span class="h">⋮⋮</span><span class="n">7</span>Email sig<span class="t">TEXT</span></div>
+   <div class="li"><span class="h">⋮⋮</span><span class="n">8</span>Mute<span class="t">SYSTEM</span></div>
+  </div>
+ </div>
+ <div class="ins">
+  <div style="font:600 15px var(--ui)">Slice 2 · Terminal</div>
+  <label>Action</label><div class="sel">App</div>
+  <label>Target</label><div class="inp">wt.exe  —  Windows Terminal</div>
+  <div style="display:flex;gap:8px"><span class="btn">Browse…</span><span class="btn">Pick running app</span></div>
+  <label>Arguments</label><div class="inp">-d "D:\\Projects"</div>
+  <label>Label</label><div class="inp">TERMINAL</div>
+  <label>Icon</label><div style="display:flex;gap:8px;align-items:center"><div class="ph" style="width:34px;height:34px"></div><span class="sel" style="min-width:140px">App's own icon</span></div>
+  <label>Sub-actions (max 4)</label>
+  <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="btn">+ Add sub-action</span><span class="chip" style="align-self:center">RUN ALL: OFF</span></div>
+  <div style="margin-top:auto;display:flex;gap:8px"><span class="btn">Test ▸</span><span class="btn" style="margin-left:auto;color:#fb7185">Clear slice</span></div>
+ </div>
+</div>`,"07 · Settings → Wheels (editor, drag to reorder)");
+spokeWheel(document.body,{cx:672,cy:312,rOut:116,rIn:52,hubSize:42,items:DEV_ITEMS(),hover:1,hub:{t:"DEV",s:"PREVIEW"}});
+</script>
+<div class="note" style="left:290px;top:560px;max-width:170px;font-size:11px"><b>Reorder</b> by dragging in the list <i>or</i> directly on the wheel. <b>Drop</b> an app, file, folder or URL onto a slice to fill it. Undo with Ctrl+Z.</div>
+</body></html>

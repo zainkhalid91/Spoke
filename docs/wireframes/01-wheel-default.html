@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script></head><body>
+<div class="label-tag">01 · Wheel open — default (nothing hovered)</div>
+<script>
+desk(document.body);
+document.body.insertAdjacentHTML("beforeend",'<div class="dim"></div>');
+const items=[{label:"VS CODE",sub:"app"},{label:"TERMINAL",sub:"app"},{label:"REPOS",sub:"folder"},{label:"SEARCH",sub:"4 inside",fan:1},{label:"GITHUB",sub:"url"},{label:"SNIP",sub:"screenshot"},{label:"EMAIL SIG",sub:"text"},{label:"MUTE",sub:"system"}];
+spokeWheel(document.body,{cx:640,cy:380,items,hover:null,hub:{t:"DEV",s:"1–8 · ←→ · ESC"}});
+wheelRow(document.body,640,600,["Dev","Browser","Clips","Media"],0);
+cursor(document.body,640,380);
+</script>
+<div class="note" style="left:930px;top:70px"><b>Opens centred on the pointer</b> on the monitor under it, at that monitor's DPI. Clamped so it never goes off-screen.<br><br>Notepad <b>keeps focus</b>: its caret is still blinking behind the wheel.</div>
+<div class="note" style="left:930px;top:250px">Numbers <b>1–8</b> on the inner edge = keyboard shortcuts.<br>“▸” on a slice = it has sub-actions.</div>
+<div class="note" style="left:60px;top:560px"><b>Wheel row</b>: other wheels. Tab / Shift+Tab or click to switch in place.</div>
+<div class="note" style="left:930px;top:430px">Light dim behind (optional, Appearance). Click anywhere outside the ring with nothing hovered = close.</div>
+</body></html>

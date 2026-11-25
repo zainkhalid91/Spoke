@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="wheel.js"></script></head><body>
+<div class="label-tag">04 · File drop — format wheel (dragging photo.heic)</div>
+<script>
+desk(document.body);document.body.insertAdjacentHTML("beforeend",'<div class="dim"></div>');
+const items=[{label:"PNG",sub:"≈ 18.2 MB"},{label:"JPEG",sub:"≈ 2.1 MB"},{label:"WEBP",sub:"≈ 1.4 MB"},{label:"HEIC",sub:"original",ghost:1},{label:"TIFF",sub:"≈ 34 MB"},{label:"GIF",sub:"≈ 6.0 MB"},{label:"BMP",sub:"≈ 36 MB"},{label:"RESIZE",sub:"50% · 25%",fan:1}];
+spokeWheel(document.body,{cx:620,cy:370,items,hover:2,hub:{t:"→ WEBP",s:"PHOTO.HEIC 4.9MB",s2:"DROP TO CONVERT"}});
+cursor(document.body,742,322);
+document.body.insertAdjacentHTML("beforeend",'<div style="position:absolute;left:790px;top:300px;width:64px;height:48px;border:1px solid #5a606c;border-radius:4px;background:#2a2e36;opacity:.85;font:10px Consolas;color:#ccc;padding:30px 4px 0;z-index:7">photo.heic</div>');
+document.body.insertAdjacentHTML("beforeend",'<div style="position:absolute;left:620px;top:610px;transform:translateX(-50%);font:11px Cascadia Mono,Consolas;color:#7d838e;letter-spacing:.06em">SAVED BESIDE ORIGINAL · NOTHING UPLOADED · ESC CANCELS</div>');
+</script>
+<div class="note" style="left:930px;top:70px"><b>How it opens:</b> while dragging a file, press the wheel shortcut, or drag into a hot corner. (Explorer right-click → <b>Convert with Spoke…</b> opens the same wheel.)</div>
+<div class="note" style="left:930px;top:210px">Each slice shows the <b>estimated output size</b>, computed by the worker from a quick sample encode before you drop.</div>
+<div class="note" style="left:930px;top:330px">The source format is greyed. <b>HEIC</b> appears only if the HEIF codec is installed.</div>
+<div class="note" style="left:930px;top:430px"><b>Video</b> gets its own wheel: MP4 · WEBM · MOV · MKV · GIF · MUTE · AUDIO ▸ (MP3/AAC/WAV/REPLACE).</div>
+</body></html>

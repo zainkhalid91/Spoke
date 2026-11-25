@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="wf.css"><script src="items.js"></script></head><body>
+<script>
+shell("General",`
+<h1>General</h1><div class="sub">Spoke v0.1 · daemon 18 MB · 0.0% CPU · wheel opens in 9 ms (p95 14 ms)</div>
+<div class="card">
+ <div class="row"><span class="k">Start with Windows</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Show tray icon</span><span class="tog on"></span></div>
+ <div class="row"><span class="k">Pause all triggers<small>Also in the tray menu</small></span><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">P</span><span class="tog"></span></div>
+ <div class="row"><span class="k">Run with admin rights at logon<small>Lets Spoke type into apps running as administrator. Uses Task Scheduler.</small></span><span class="tog"></span></div>
+ <div class="row"><span class="k">Default browser for website slices</span><span class="sel">System default</span></div>
+ <div class="row"><span class="k">Screenshots folder</span><span class="inp" style="min-width:260px">C:\\Users\\…\\Pictures\\Spoke</span><span class="btn">Change</span></div>
+ <div class="row"><span class="k">Language</span><span class="sel">English</span></div>
+</div>
+<div class="card">
+ <div class="row"><span class="k">Back up all wheels and settings</span><span class="btn">Export…</span><span class="btn">Restore…</span></div>
+ <div class="row"><span class="k">Open settings.json</span><span class="btn">Open</span></div>
+ <div class="row"><span class="k">Logs (local only)</span><span class="btn">Open folder</span></div>
+ <div class="row"><span class="k">Reset Spoke</span><span class="btn" style="color:#fb7185">Reset…</span></div>
+</div>`,"13 · Settings → General (shows live performance numbers)");
+</script></body></html>
