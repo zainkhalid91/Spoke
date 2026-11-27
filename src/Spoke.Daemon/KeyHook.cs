@@ -118,27 +118,42 @@ internal static unsafe class KeyHook
     [
         VIRTUAL_KEY.VK_1, VIRTUAL_KEY.VK_2, VIRTUAL_KEY.VK_3, VIRTUAL_KEY.VK_4, VIRTUAL_KEY.VK_5, VIRTUAL_KEY.VK_6, VIRTUAL_KEY.VK_7, VIRTUAL_KEY.VK_8, VIRTUAL_KEY.VK_9,
         VIRTUAL_KEY.VK_NUMPAD1, VIRTUAL_KEY.VK_NUMPAD2, VIRTUAL_KEY.VK_NUMPAD3, VIRTUAL_KEY.VK_NUMPAD4, VIRTUAL_KEY.VK_NUMPAD5, VIRTUAL_KEY.VK_NUMPAD6, VIRTUAL_KEY.VK_NUMPAD7, VIRTUAL_KEY.VK_NUMPAD8, VIRTUAL_KEY.VK_NUMPAD9,
+        VIRTUAL_KEY.VK_0, VIRTUAL_KEY.VK_NUMPAD0,
     ];
 
     /// <summary>1-based digit for 1–9 / numpad 1–9, else 0.</summary>
     public static int DigitOf(VIRTUAL_KEY vk) =>
         vk >= VIRTUAL_KEY.VK_1 && vk <= VIRTUAL_KEY.VK_9 ? vk - VIRTUAL_KEY.VK_1 + 1 :
-        vk >= VIRTUAL_KEY.VK_NUMPAD1 && vk <= VIRTUAL_KEY.VK_NUMPAD9 ? vk - VIRTUAL_KEY.VK_NUMPAD1 + 1 : 0;
+        vk >= VIRTUAL_KEY.VK_NUMPAD1 && vk <= VIRTUAL_KEY.VK_NUMPAD9 ? vk - VIRTUAL_KEY.VK_NUMPAD1 + 1 :
+        vk is VIRTUAL_KEY.VK_0 or VIRTUAL_KEY.VK_NUMPAD0 ? 10 : 0;
 
     /// <summary>
     /// Sends Ctrl+V to the foreground app. Waits (briefly) for the user to release modifier keys first so
     /// that e.g. a held Alt doesn't turn the paste into a menu shortcut.
     /// </summary>
-    public static void SendPaste()
+    public static void SendPaste() => SendCtrl(VIRTUAL_KEY.VK_V);
+    public static void SendCopy() => SendCtrl(VIRTUAL_KEY.VK_C);
+
+    /// <summary>Ctrl+key into the focused app, once Alt/Shift/Win from the shortcut are released.</summary>
+    private static void SendCtrl(VIRTUAL_KEY vk)
     {
         for (int i = 0; i < 40 && (IsDown(VIRTUAL_KEY.VK_MENU) || IsDown(VIRTUAL_KEY.VK_SHIFT) || IsDown(VIRTUAL_KEY.VK_LWIN) || IsDown(VIRTUAL_KEY.VK_RWIN)); i++)
             Thread.Sleep(10);
         var inputs = stackalloc INPUT[4];
         inputs[0] = Key(VIRTUAL_KEY.VK_CONTROL, false);
-        inputs[1] = Key(VIRTUAL_KEY.VK_V, false);
-        inputs[2] = Key(VIRTUAL_KEY.VK_V, true);
+        inputs[1] = Key(vk, false);
+        inputs[2] = Key(vk, true);
         inputs[3] = Key(VIRTUAL_KEY.VK_CONTROL, true);
         PInvoke.SendInput(4, inputs, sizeof(INPUT));
+    }
+
+    /// <summary>Presses and releases one key (media and volume keys).</summary>
+    public static void Tap(VIRTUAL_KEY vk)
+    {
+        var inputs = stackalloc INPUT[2];
+        inputs[0] = Key(vk, false);
+        inputs[1] = Key(vk, true);
+        PInvoke.SendInput(2, inputs, sizeof(INPUT));
     }
 
     private static INPUT Key(VIRTUAL_KEY vk, bool up) => new()

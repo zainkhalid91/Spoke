@@ -10,10 +10,10 @@ public class ConfigTests
         var r = ConfigLoader.Parse("");
         Assert.True(r.Ok);
         Assert.True(r.UsedDefaultWheel);
-        Assert.Equal(8, r.Slices.Count);
+        Assert.Equal(12, r.Slices.Count);
         Assert.Equal("Spoke", r.WheelName);
-        Assert.Equal([SliceKind.Tool, SliceKind.Tool, SliceKind.Tool, SliceKind.App, SliceKind.Folder, SliceKind.Search, SliceKind.Url, SliceKind.Text],
-            r.Slices.Select(s => s.Kind));
+        Assert.Equal([SliceKind.Tool, SliceKind.Tool, SliceKind.Tool, SliceKind.Tool, SliceKind.App, SliceKind.Folder, SliceKind.Search, SliceKind.Url, SliceKind.Text,
+            SliceKind.Tool, SliceKind.Tool, SliceKind.Tool], r.Slices.Select(s => s.Kind));
     }
 
     [Fact]
@@ -28,7 +28,7 @@ public class ConfigTests
         var again = ConfigLoader.Parse(upgraded);
         Assert.False(again.UsedDefaultWheel);
         Assert.Equal("Ember", again.Config!.Theme);
-        Assert.Equal(8, again.Slices.Count);
+        Assert.Equal(12, again.Slices.Count);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class ConfigTests
         Assert.Contains("today's", json);   // no ' escapes in a hand-edited file
         var r = ConfigLoader.Parse(json);
         Assert.True(r.Ok, string.Join("; ", r.Errors));
-        Assert.Equal(8, r.Slices.Count);
+        Assert.Equal(12, r.Slices.Count);
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class ConfigTests
     [InlineData("""{ "type": "app" }""", "needs a \"target\"")]
     [InlineData("""{ "type": "rocket" }""", "unknown")]
     [InlineData("""{ "label": "x" }""", "\"type\" is missing")]
-    [InlineData("""{ "type": "tool", "tool": "laser" }""", "screenshot, colorPicker or clips")]
+    [InlineData("""{ "type": "tool", "tool": "laser" }""", "screenshot, colorPicker, clips")]
     [InlineData("""{ "type": "folder", "target": "C:\\x", "open": "teleport" }""", "explorer, terminal or copyPath")]
     [InlineData("""{ "type": "search", "engine": "askjeeves" }""", "{query}")]
     [InlineData("""{ "type": "text" }""", "needs some \"text\"")]

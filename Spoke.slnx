@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Spoke.Core/Spoke.Core.csproj" />
     <Project Path="src/Spoke.Daemon/Spoke.Daemon.csproj" />
+    <Project Path="src/Spoke.Settings/Spoke.Settings.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Spoke.Core.Tests/Spoke.Core.Tests.csproj" />

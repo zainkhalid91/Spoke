@@ -23,6 +23,8 @@ internal unsafe struct ClipThumb
 internal sealed class WheelView
 {
     public int Hover = -1;
+    /// <summary>The hovered item of the outer band (subMenus "ring"), or -1.</summary>
+    public int RingHover = -1;
     public bool Clips;
     public ClipThumb[] Thumbs = new ClipThumb[Spoke.Core.ConfigLoader.MaxSlices];
     public int ClipCount, Page, Pages;
@@ -39,7 +41,9 @@ internal sealed class WheelView
 /// </summary>
 internal sealed unsafe class WheelRenderer
 {
-    public const float Extent = 216f;   // half the drawn square: ring + hover lift + shadow
+    /// <summary>Half the drawn square: the wheel + hover lift + shadow, or the outer band's reach in ring mode.</summary>
+    public float Extent { get; private set; } = WheelExtent;
+    private const float WheelExtent = 216f;
     public const float Lift = 9f;
     public WheelLayout Layout { get; private set; }
     private const int MaxSlices = Spoke.Core.ConfigLoader.MaxSlices;
@@ -71,6 +75,22 @@ internal sealed unsafe class WheelRenderer
     private Theme? _cacheTheme;
     private readonly string[] _glyphs = new string[MaxSlices];
 
+    // The outer band (subMenus "ring"): built when it opens, released when it closes.
+    public sealed class RingBand
+    {
+        public required int Parent;
+        public required SliceDef[] Items;
+        public required string Title;
+        public required RingLayout Layout;
+        public ID2D1PathGeometry*[] Geo = [];
+        public ID2D1PathGeometry*[] Edge = [];
+        public ID2D1PathGeometry* Back;
+        public string[] Glyphs = [];
+    }
+    public RingBand? Ring { get; private set; }
+    private IDWriteTextFormat* _fmtRingLabel;
+    private uint _monitorDpi = 96;
+
     // Draw-time stats for the bench report.
     public long DrawCount;
     public double DrawMsTotal, DrawMsMax;
@@ -92,6 +112,7 @@ internal sealed unsafe class WheelRenderer
         _fmtHub = g.Format("Segoe UI Variable Display", 14f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD);
         _fmtHubSub = g.Format(ui, 9f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
         _fmtPill = g.Format(mono, 8.5f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
+        _fmtRingLabel = g.Format(ui, 10f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD);
 
         _fmtQuery = g.Format(ui, 15f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING);
         _fmtQueryHint = g.Format(ui, 10f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
@@ -135,6 +156,9 @@ internal sealed unsafe class WheelRenderer
 
     public SliceDef[] Slices => _slices;
 
+    /// <summary>Builds the cached resting wheel now (after returning from a sub-wheel), so the next open is one blit.</summary>
+    public void Warm() => EnsureCache();
+
     public void SetTheme(Theme t)
     {
         Theme = t;
@@ -153,11 +177,59 @@ internal sealed unsafe class WheelRenderer
         _highlight = _g.Linear(0, -o, 0, o * 0.2f, (0f, C(0xFFFFFF, t.HighlightAlpha)), (1f, C(0xFFFFFF, 0)));
     }
 
-    /// <summary>Resizes the swap chain for a monitor DPI. A no-op unless the DPI changed since the last open.</summary>
-    public void SetDpi(uint dpi)
+    /// <summary>Wheel size (settings "size"): applied as a DPI factor, so everything scales and stays sharp.</summary>
+    public float Scale = 1f;
+
+    /// <summary>Resizes the swap chain for a monitor DPI (times <see cref="Scale"/>). A no-op unless that changed since the last open.</summary>
+    public void SetDpi(uint monitorDpi)
     {
+        _monitorDpi = monitorDpi;
+        uint dpi = (uint)MathF.Round(monitorDpi * Scale);
         int px = (int)MathF.Ceiling(Extent * 2 * dpi / 96f);
         _surface.Resize(px, px, dpi);
+    }
+
+    /// <summary>
+    /// Ring mode needs a larger drawing square so the outer band fits. Changing it resizes the surface and
+    /// drops the cached wheel; done when settings change, never while the wheel is open.
+    /// </summary>
+    public void SetRingMode(bool ring)
+    {
+        float e = ring ? MathF.Ceiling(RingLayout.Reach(Layout.OuterRadius) + 14f) : WheelExtent;
+        if (e == Extent) return;
+        Extent = e;
+        ReleaseCache();
+        SetDpi(_monitorDpi);
+    }
+
+    /// <summary>Shows the outer band of <paramref name="items"/> around slice <paramref name="parent"/>.</summary>
+    public void OpenRing(int parent, SliceDef[] items, string title)
+    {
+        CloseRing();
+        var layout = new RingLayout(items.Length, Layout.CenterAngle(parent), Layout.OuterRadius);
+        var band = new RingBand { Parent = parent, Items = items, Title = title, Layout = layout };
+        band.Geo = new ID2D1PathGeometry*[items.Length];
+        band.Edge = new ID2D1PathGeometry*[items.Length];
+        band.Glyphs = new string[items.Length];
+        for (int i = 0; i < items.Length; i++)
+        {
+            var (a1, a2) = layout.ItemAngles(i);
+            band.Geo[i] = _g.Annulus(layout.InnerRadius, layout.OuterRadius, a1, a2);
+            band.Edge[i] = _g.Annulus(layout.InnerRadius, layout.InnerRadius + 3f, a1, a2);
+            band.Glyphs[i] = items[i].Glyph.ToString();
+        }
+        float pad = 3f / ((layout.InnerRadius + layout.OuterRadius) / 2f);
+        band.Back = _g.Annulus(layout.InnerRadius - 3f, layout.OuterRadius + 3f, layout.Start - pad, layout.Start + layout.Step * items.Length + pad);
+        Ring = band;
+    }
+
+    public void CloseRing()
+    {
+        if (Ring is not { } band) return;
+        foreach (var g in band.Geo) Release(g);
+        foreach (var g in band.Edge) Release(g);
+        Release(band.Back);
+        Ring = null;
     }
 
     public void SetOffset(int x, int y) => _surface.SetOffset(x, y);
@@ -175,6 +247,51 @@ internal sealed unsafe class WheelRenderer
         long t0 = Stopwatch.GetTimestamp();
         bool cached = !v.Clips && EnsureCache();
         if (!_surface.Begin()) return;
+        DrawBody(v, cached);
+        _surface.End();
+
+        double ms = Log.Ms(t0, Stopwatch.GetTimestamp());
+        DrawCount++;
+        DrawMsTotal += ms;
+        if (ms > DrawMsMax) DrawMsMax = ms;
+    }
+
+    /// <summary>
+    /// Draws a frame into an offscreen bitmap over an opaque backdrop and returns its pixels (for
+    /// <c>Spoke.exe --render</c>: checking the look without showing anything on screen).
+    /// </summary>
+    public Pixels Snapshot(WheelView v, uint backdropRgb)
+    {
+        int px = _surface.Width;
+        var bg = C(backdropRgb);
+        var bmp = RenderToBitmap(px, () =>
+        {
+            var fill = bg;
+            _g.Dc->Clear(&fill);
+            DrawBody(v, cached: false);
+        });
+        var props = new D2D1_BITMAP_PROPERTIES1
+        {
+            pixelFormat = new D2D1_PIXEL_FORMAT { format = Windows.Win32.Graphics.Dxgi.Common.DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode = D2D1_ALPHA_MODE.D2D1_ALPHA_MODE_PREMULTIPLIED },
+            dpiX = _surface.Dpi, dpiY = _surface.Dpi,
+            bitmapOptions = D2D1_BITMAP_OPTIONS.D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS.D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+        };
+        ID2D1Bitmap1* cpu;
+        _g.Dc->CreateBitmap(new D2D_SIZE_U { width = (uint)px, height = (uint)px }, null, 0, &props, &cpu);
+        ((ID2D1Bitmap*)cpu)->CopyFromBitmap(null, (ID2D1Bitmap*)bmp, null);
+        D2D1_MAPPED_RECT mapped;
+        cpu->Map(D2D1_MAP_OPTIONS.D2D1_MAP_OPTIONS_READ, &mapped);
+        var data = new byte[px * px * 4];
+        for (int y = 0; y < px; y++)
+            new ReadOnlySpan<byte>(mapped.bits + y * mapped.pitch, px * 4).CopyTo(data.AsSpan(y * px * 4));
+        cpu->Unmap();
+        Release(cpu);
+        Release(bmp);
+        return new Pixels { Width = px, Height = px, Data = data };
+    }
+
+    private void DrawBody(WheelView v, bool cached)
+    {
         var t = Theme;
         var dc = _g.Dc;
         var ring = Layout;
@@ -186,27 +303,35 @@ internal sealed unsafe class WheelRenderer
             _g.SetTranslate(0, 0);
             dc->DrawImage((ID2D1Image*)_cacheFull, null, null, D2D1_INTERPOLATION_MODE.D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_COMPOSITE_MODE.D2D1_COMPOSITE_MODE_SOURCE_COPY);
             _g.SetTranslate(E, E);
-            if (hover >= 0)
+            // The hovered slice and the slice whose band is open are drawn lifted.
+            int parent = Ring?.Parent ?? -1;
+            foreach (int lifted in (ReadOnlySpan<int>)[parent, hover == parent ? -1 : hover])
             {
-                // Put back what lies under the hovered slice (shadow + backplate), then draw it lifted.
-                var geo = (ID2D1Geometry*)_sliceGeo[hover];
+                if (lifted < 0) continue;
+                // Put back what lies under the slice (shadow + backplate), then draw it lifted.
+                var geo = (ID2D1Geometry*)_sliceGeo[lifted];
                 dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_ALIASED);
                 dc->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND.D2D1_PRIMITIVE_BLEND_COPY);
                 dc->FillGeometry(geo, (ID2D1Brush*)_cacheUnderBrush, null);
                 dc->DrawGeometry(geo, (ID2D1Brush*)_cacheUnderBrush, 2.5f, null);
                 dc->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND.D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
                 dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE.D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                DrawSlice(hover, v, true);
+                DrawSlice(lifted, v, true);
             }
         }
         else
         {
             DrawUnder();
-            for (int i = 0; i < _slices.Length; i++) DrawSlice(i, v, i == hover);
+            int parent = Ring?.Parent ?? -1;
+            for (int i = 0; i < _slices.Length; i++) DrawSlice(i, v, i == hover || i == parent);
             DrawDial(hover);
         }
 
-        var accent = hover >= 0 ? t.Hue(hover) : t.Hue(0);
+        if (Ring is { } band) DrawRing(band, v);
+        // With a band open, the colour (and needle) belong to its slice unless another slice is hovered.
+        int lead = hover >= 0 ? hover : Ring?.Parent ?? -1;
+        var accent = lead >= 0 ? t.Hue(lead) : t.Hue(0);
+        hover = lead;
 
         // The spoke: a needle from the hub to the hovered slice, with its number on a bead.
         if (hover >= 0)
@@ -224,15 +349,9 @@ internal sealed unsafe class WheelRenderer
         _g.StrokeCircle(0, 0, ring.HubRadius, hover >= 0 ? WithAlpha(accent, 0.55f) : t.HubStroke, 1f);
 
         if (v.Clips) DrawClipsHub(v, accent);
+        else if (Ring is { } r && (v.RingHover >= 0 || v.Hover < 0)) DrawRingHub(r, v.RingHover, accent);
         else DrawMainHub(hover, accent);
         if (v.Query) DrawQuery(v, accent);
-
-        _surface.End();
-
-        double ms = Log.Ms(t0, Stopwatch.GetTimestamp());
-        DrawCount++;
-        DrawMsTotal += ms;
-        if (ms > DrawMsMax) DrawMsMax = ms;
     }
 
     private float Dial => (Layout.HubRadius + Layout.InnerRadius) / 2f;
@@ -391,6 +510,61 @@ internal sealed unsafe class WheelRenderer
             _g.FillCircle(0, -22, 4f, accent);
             _g.Text(WheelName, _fmtHub, 0, 0, 112, 20, t.Text);
             _g.Text("1–8 · arrows · Esc", _fmtHubSub, 0, 19, 112, 13, t.TextFaint);
+        }
+    }
+
+    /// <summary>
+    /// The outer band: a backplate, then one segment per item in the parent slice's colour. The hovered item
+    /// fills with that colour and gets a bright inner edge, like a hovered slice.
+    /// </summary>
+    private void DrawRing(RingBand band, WheelView v)
+    {
+        var t = Theme;
+        var dc = _g.Dc;
+        var L = band.Layout;
+        var hue = t.Hue(band.Parent);
+        _g.SetColor(t.Light ? WithAlpha(t.RingOuter, 0.96f) : WithAlpha(t.HubBottom, 0.9f));
+        dc->FillGeometry((ID2D1Geometry*)band.Back, (ID2D1Brush*)_g.Brush, null);
+
+        float rMid = (L.InnerRadius + L.OuterRadius) / 2f;   // glyph above the label, like a slice: reads the same at any angle
+        for (int i = 0; i < band.Items.Length; i++)
+        {
+            bool hov = i == v.RingHover;
+            var geo = (ID2D1Geometry*)band.Geo[i];
+            _g.SetColor(t.RingInner);
+            dc->FillGeometry(geo, (ID2D1Brush*)_g.Brush, null);
+            _g.SetColor(WithAlpha(hue, hov ? t.GlowAlpha + 0.08f : 0.07f));
+            dc->FillGeometry(geo, (ID2D1Brush*)_g.Brush, null);
+            _g.SetColor(hov ? WithAlpha(hue, 0.7f) : t.Stroke);
+            dc->DrawGeometry(geo, (ID2D1Brush*)_g.Brush, hov ? 1.2f : 1f, null);
+            if (hov)
+            {
+                _g.SetColor(hue);
+                dc->FillGeometry((ID2D1Geometry*)band.Edge[i], (ID2D1Brush*)_g.Brush, null);
+            }
+            float a = L.CenterAngle(i), c = MathF.Cos(a), s = MathF.Sin(a);
+            _g.Text(band.Glyphs[i], _fmtGlyph, rMid * c, rMid * s - 9f, 30, 24, hov ? t.Text : hue);
+            _g.Text(band.Items[i].Label, _fmtRingLabel, rMid * c, rMid * s + 14f, 70, 14, hov ? t.Text : t.TextDim);
+        }
+    }
+
+    /// <summary>Hub text while a band is open: the hovered item, or the band's title and how to go back.</summary>
+    private void DrawRingHub(RingBand band, int item, D2D1_COLOR_F accent)
+    {
+        var t = Theme;
+        if (item >= 0)
+        {
+            var s = band.Items[item];
+            _g.Text(band.Glyphs[item], _fmtGlyphHub, 0, -24, 40, 26, accent);
+            _g.Text(s.Label, _fmtHub, 0, 2, 112, 20, t.Text);
+            _g.Text(s.Detail, _fmtHubSub, 0, 20, 112, 13, t.TextFaint);
+        }
+        else
+        {
+            _g.FillCircle(0, -22, 4f, accent);
+            _g.Text(band.Title, _fmtHub, 0, 0, 112, 20, t.Text);
+            int n = Math.Min(band.Items.Length, 9);
+            _g.Text(n > 1 ? $"1–{(n == 10 ? 0 : n)} · Esc back" : "Enter · Esc back", _fmtHubSub, 0, 19, 112, 13, t.TextFaint);
         }
     }
 

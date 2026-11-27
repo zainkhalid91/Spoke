@@ -12,7 +12,17 @@ public sealed class SpokeConfig
     public int Version { get; set; } = 1;
     /// <summary>e.g. "Ctrl+Alt+Space". Null: the first free one of Spoke's defaults.</summary>
     public string? Hotkey { get; set; }
+    /// <summary>Aurora | Ember | Paper | Graphite | Auto (follow Windows light/dark).</summary>
     public string? Theme { get; set; }
+    /// <summary>With theme Auto: the theme for light mode (default Paper) and dark mode (default Aurora).</summary>
+    public string? LightTheme { get; set; }
+    public string? DarkTheme { get; set; }
+    /// <summary>Slice colours: theme (default) | windows (the Windows accent colour, live) | "#RRGGBB".</summary>
+    public string? Accent { get; set; }
+    /// <summary>S | M | L | XL, or a scale from 0.7 to 1.6.</summary>
+    public string? Size { get; set; }
+    /// <summary>How Files, Text tools, Generate and System show their options: ring (an outer band, default) | wheel (a new wheel).</summary>
+    public string? SubMenus { get; set; }
     /// <summary>Wheels. M1 uses the first one; more wheels and the wheel row arrive in M3.</summary>
     public List<WheelConfig>? Wheels { get; set; }
 }
@@ -33,7 +43,7 @@ public sealed class SliceConfig
     /// <summary>A glyph name (see <see cref="Glyphs"/>) or a code point like "E774". App slices use the app's own icon.</summary>
     public string? Icon { get; set; }
 
-    /// <summary>tool: screenshot | colorPicker | clips</summary>
+    /// <summary>tool: screenshot | colorPicker | clips | files | text | generate | system</summary>
     public string? Tool { get; set; }
     /// <summary>app: exe name or path, .lnk, or shell:AppsFolder\&lt;AUMID&gt;. url: the address. folder: the path.</summary>
     public string? Target { get; set; }
@@ -64,7 +74,7 @@ internal sealed partial class ConfigJson : JsonSerializerContext;
 // ───────────────────────── what the daemon runs ─────────────────────────
 
 public enum SliceKind { Tool, App, Url, Folder, Search, Text }
-public enum ToolKind { None, Screenshot, ColorPicker, Clips }
+public enum ToolKind { None, Screenshot, ColorPicker, Clips, Files, TextTools, Generate, System }
 public enum FolderOpen { Explorer, Terminal, CopyPath }
 
 /// <summary>A validated slice with every default filled in. Paths still hold %ENV% variables (expanded at run time).</summary>
@@ -89,6 +99,9 @@ public sealed record ConfigResult(
     IReadOnlyList<string> Errors,
     bool UsedDefaultWheel)
 {
+    /// <summary>Theme, colours and size (defaults when the file couldn't be read).</summary>
+    public Appearance Appearance { get; init; } = Appearance.Default;
+
     public bool Ok => Errors.Count == 0;
 }
 
@@ -105,11 +118,15 @@ public static class ConfigLoader
             new() { Type = "tool", Tool = "screenshot" },
             new() { Type = "tool", Tool = "colorPicker" },
             new() { Type = "tool", Tool = "clips" },
+            new() { Type = "tool", Tool = "files" },
             new() { Type = "app", Label = "Terminal", Target = "wt.exe", Detail = "Windows Terminal" },
             new() { Type = "folder", Label = "Downloads", Target = "%USERPROFILE%\\Downloads" },
             new() { Type = "search", Label = "Search", Engine = "google" },
             new() { Type = "url", Label = "GitHub", Target = "https://github.com" },
             new() { Type = "text", Label = "Today", Text = "{date}", Detail = "Types today's date" },
+            new() { Type = "tool", Tool = "text" },
+            new() { Type = "tool", Tool = "generate" },
+            new() { Type = "tool", Tool = "system" },
         ],
     };
 
@@ -158,7 +175,8 @@ public static class ConfigLoader
             else slices.Add(s!);
         }
         string name = string.IsNullOrWhiteSpace(wheel.Name) ? "Spoke" : wheel.Name.Trim();
-        return new(c, name, slices, errors, usedDefault);
+        var look = Appearance.From(c, errors);
+        return new(c, name, slices, errors, usedDefault) { Appearance = look };
     }
 
     public static Slice? Resolve(SliceConfig? s, out string? error)
@@ -178,13 +196,21 @@ public static class ConfigLoader
                     "screenshot" => ToolKind.Screenshot,
                     "colorpicker" or "colourpicker" => ToolKind.ColorPicker,
                     "clips" => ToolKind.Clips,
+                    "files" or "file" or "convert" => ToolKind.Files,
+                    "text" or "texttools" => ToolKind.TextTools,
+                    "generate" or "generators" => ToolKind.Generate,
+                    "system" => ToolKind.System,
                     _ => ToolKind.None,
                 };
-                if (tool == ToolKind.None) { error = "\"tool\" must be screenshot, colorPicker or clips."; return null; }
+                if (tool == ToolKind.None) { error = "\"tool\" must be screenshot, colorPicker, clips, files, text, generate or system."; return null; }
                 var (l, d) = tool switch
                 {
                     ToolKind.Screenshot => ("Screenshot", "Region, window, screen"),
                     ToolKind.ColorPicker => ("Color picker", "Copy any pixel's colour"),
+                    ToolKind.Files => ("Files", "Convert, resize, PDF, Word"),
+                    ToolKind.TextTools => ("Text tools", "Case, JSON, Base64, count"),
+                    ToolKind.Generate => ("Generate", "UUID, password, date, lorem"),
+                    ToolKind.System => ("System", "Volume, lock, dark mode"),
                     _ => ("Clips", "Your copied images"),
                 };
                 return new(SliceKind.Tool, label ?? l, detail ?? d, icon, tool);
@@ -265,6 +291,40 @@ public static class ConfigLoader
         root[name] = value;
         return root.ToJsonString(WriteOptions) + Environment.NewLine;
     }
+
+    /// <summary>
+    /// Writes a whole config (from Spoke Settings) into the user's file: every key Spoke knows is replaced or
+    /// removed to match <paramref name="config"/>, keys it doesn't know are kept. Comments are not kept.
+    /// A file that isn't valid JSON is replaced, since the caller only saves a config that validated.
+    /// </summary>
+    public static string WithConfig(string json, SpokeConfig config)
+    {
+        JsonObject root;
+        try
+        {
+            root = JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json, documentOptions: new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+            }) as JsonObject ?? new JsonObject();
+        }
+        catch (JsonException) { root = new JsonObject(); }
+
+        var typeInfo = (System.Text.Json.Serialization.Metadata.JsonTypeInfo<SpokeConfig>)WriteOptions.GetTypeInfo(typeof(SpokeConfig));
+        var fresh = JsonSerializer.SerializeToNode(config, typeInfo) as JsonObject ?? new JsonObject();
+        foreach (var known in typeInfo.Properties)
+        {
+            string key = known.Name;
+            string? existing = root.Select(p => p.Key).FirstOrDefault(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+            if (existing != null && existing != key) root.Remove(existing);
+            if (fresh[key] is { } value) root[key] = value.DeepClone();
+            else root.Remove(key);
+        }
+        return root.ToJsonString(WriteOptions) + Environment.NewLine;
+    }
+
+    /// <summary>A deep copy (Settings edits a copy and compares it with what's on disk).</summary>
+    public static SpokeConfig Clone(SpokeConfig c) => JsonSerializer.Deserialize(JsonSerializer.Serialize(c, ConfigJson.Default.SpokeConfig), ConfigJson.Default.SpokeConfig)!;
 
     /// <summary>Adds the default wheel to a file that has none (e.g. one holding only a theme), keeping the other values.</summary>
     public static string WithDefaultWheel(string json)
@@ -350,7 +410,11 @@ public static class Glyphs
         }
         return s.Kind switch
         {
-            SliceKind.Tool => s.Tool switch { ToolKind.Screenshot => '\uF406', ToolKind.ColorPicker => '\uEF3C', _ => '\uE8B9' },
+            SliceKind.Tool => s.Tool switch
+            {
+                ToolKind.Screenshot => '\uF406', ToolKind.ColorPicker => '\uEF3C', ToolKind.Files => '\uE8A5', ToolKind.TextTools => '\uE8D2',
+                ToolKind.Generate => '\uE945', ToolKind.System => '\uE770', _ => '\uE8B9',
+            },
             SliceKind.App => '\uE71D',
             SliceKind.Url => '\uE774',
             SliceKind.Folder => s.Open == FolderOpen.Terminal ? '\uE756' : s.Open == FolderOpen.CopyPath ? '\uE8C8' : '\uE8B7',

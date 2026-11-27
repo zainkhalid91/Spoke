@@ -39,6 +39,36 @@ public readonly record struct Hotkey(HotkeyModifiers Modifiers, uint VirtualKey)
         return true;
     }
 
+    /// <summary>Keys a shortcut can end with (what <see cref="TryParse"/> and <see cref="ToString"/> understand).</summary>
+    public static bool IsSupportedKey(uint vk) =>
+        vk is >= 'A' and <= 'Z' or >= '0' and <= '9' or >= 0x70 and <= 0x87 or 0x20 or 0xC0 or 0x09 or 0x0D;
+
+    /// <summary>From a key press while recording. Null when the key or the modifiers can't make a shortcut.</summary>
+    public static Hotkey? FromKeys(HotkeyModifiers mods, uint vk) =>
+        mods != HotkeyModifiers.None && IsSupportedKey(vk) ? new Hotkey(mods, vk) : null;
+
+    /// <summary>
+    /// Why this combination is a poor choice even if it's free, or null. Windows keeps most Win+ shortcuts for
+    /// itself (some can't be registered at all), and Ctrl+letter is the everyday shortcut of nearly every app.
+    /// </summary>
+    public string? Warning()
+    {
+        var m = Modifiers;
+        char k = (char)VirtualKey;
+        if (m == HotkeyModifiers.Alt && VirtualKey is 0x09 or 0x73) return "Windows uses this to switch or close windows.";
+        if (m.HasFlag(HotkeyModifiers.Win)) return "Windows reserves most Win shortcuts; this may stop working after an update.";
+        if (m == HotkeyModifiers.Ctrl && k is 'A' or 'C' or 'V' or 'X' or 'Z' or 'Y' or 'S' or 'F' or 'P' or 'N' or 'O' or 'W' or 'T')
+            return $"Ctrl+{k} is an everyday shortcut in most apps; Spoke would take it from all of them.";
+        if (m == HotkeyModifiers.Ctrl || m == HotkeyModifiers.Shift || m == HotkeyModifiers.Alt)
+            return "Shortcuts with a single modifier often clash with apps. Ctrl+Alt+… is safer.";
+        if (m == (HotkeyModifiers.Ctrl | HotkeyModifiers.Shift) && VirtualKey == 0x1B) return "Windows uses this for Task Manager.";
+        return null;
+    }
+
+    /// <summary>Shortcuts worth suggesting when the chosen one is taken, best first.</summary>
+    public static readonly string[] Suggestions =
+        ["Ctrl+Alt+Space", "Ctrl+Alt+Z", "Ctrl+Alt+Q", "Ctrl+Alt+`", "Ctrl+Shift+Alt+Space", "Ctrl+Alt+F1", "Ctrl+Shift+Space", "Ctrl+Alt+W"];
+
     private static uint KeyFromName(string name)
     {
         string n = name.ToUpperInvariant();

@@ -19,7 +19,7 @@ internal sealed class Pixels
 /// Windows Imaging Component helpers: PNG encode/decode, BMP (clipboard DIB) decode, thumbnails.
 /// One instance per thread (each owns its WIC factory); the clipboard worker and the UI thread each have one.
 /// </summary>
-internal sealed unsafe class Imaging
+internal sealed unsafe partial class Imaging
 {
     private readonly IWICImagingFactory* _wic;
 

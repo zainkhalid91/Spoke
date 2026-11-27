@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Spoke.Settings.GeneralPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="32,12,32,24" Spacing="16" MaxWidth="760" HorizontalAlignment="Left">
+            <TextBlock Text="General" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <Grid Padding="20" CornerRadius="8" BorderThickness="1" ColumnSpacing="16"
+                  Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Start with Windows" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="AutostartHint" Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.75" TextWrapping="Wrap"
+                               Text="Spoke starts when you sign in, so the wheel is always one shortcut away." />
+                </StackPanel>
+                <ToggleSwitch x:Name="AutostartSwitch" Grid.Column="1" OnContent="On" OffContent="Off" Toggled="OnAutostartToggled" />
+            </Grid>
+
+            <StackPanel Padding="20" Spacing="10" CornerRadius="8" BorderThickness="1"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                <TextBlock Text="Settings file" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.75" TextWrapping="Wrap"
+                           Text="Everything here is stored in settings.json, which you can also edit by hand. Spoke applies saved edits right away." />
+                <TextBlock x:Name="FilePathText" FontFamily="Consolas" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Open settings.json" Click="OnOpenFile" />
+                    <Button Content="Show in File Explorer" Click="OnShowFolder" />
+                    <Button Content="Open log" Click="OnOpenLog" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Padding="20" Spacing="10" CornerRadius="8" BorderThickness="1"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                <TextBlock Text="Reset" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.75" TextWrapping="Wrap"
+                           Text="Put back Spoke's starter wheel. Your shortcut and appearance stay as they are." />
+                <Button Content="Reset the wheel…" Click="OnResetWheel" />
+            </StackPanel>
+
+            <TextBlock x:Name="VersionText" Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.6" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -18,7 +18,7 @@ namespace Spoke.Daemon;
 /// window, a global hotkey, and the clipboard image history. Input hooks exist only while an overlay is open.
 /// Everything here runs on the UI thread; image processing for the history runs on <see cref="ClipWorker"/>.
 /// </summary>
-internal sealed unsafe class App
+internal sealed unsafe partial class App
 {
     public static App? Instance;
 
@@ -29,11 +29,13 @@ internal sealed unsafe class App
     public const uint WM_APP_CONFIG = PInvoke.WM_APP + 6;  // settings.json changed on disk
     public const uint WM_APP_ICONS = PInvoke.WM_APP + 7;   // app icons extracted
     public const uint WM_APP_NOTICE = PInvoke.WM_APP + 8;  // a toast from the action thread
+    public const uint WM_APP_PIPE = PInvoke.WM_APP + 9;    // a request from Spoke Settings
 
     private const int HotkeyId = 1;
     private const nuint TrimTimerId = 7, ClipTimerId = 8, ConfigTimerId = 9;
     private const uint TrimAfterMs = 60_000;   // give memory back to Windows a minute after the wheel closes
-    private const int CmdOpen = 100, CmdPause = 101, CmdQuit = 102, CmdClips = 103, CmdClearClips = 104, CmdEditSettings = 105, CmdAutostart = 106, CmdTheme0 = 110;
+    private const int CmdOpen = 100, CmdPause = 101, CmdQuit = 102, CmdClips = 103, CmdClearClips = 104, CmdEditSettings = 105, CmdAutostart = 106, CmdSettings = 107, CmdTheme0 = 110, CmdThemeAuto = 115, CmdAccentTheme = 120, CmdAccentWindows = 121, CmdSize0 = 130;
+    private const uint WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320;
 
     public HWND Overlay { get; private set; }
     private readonly HWND _tray;
@@ -47,10 +49,15 @@ internal sealed unsafe class App
     private SliceDef[] _slices => Renderer.Slices;
     private WheelLayout _layout => Renderer.Layout;
     private readonly Settings _settings;
+    private PipeServer? _pipe;
+    /// <summary>Problems in settings.json the daemon is ignoring right now (reported to Spoke Settings).</summary>
+    private IReadOnlyList<string> _configErrors = [];
     private readonly Actions _actions;
     private readonly IconLoader _icons;
     private int _configGeneration;
     private readonly string? _hotkeyOverride;
+    private Appearance _look = Appearance.Default;
+    private string _themeKey = "";
     private readonly System.Collections.Concurrent.ConcurrentQueue<(string Title, string Detail, bool Error)> _notices = new();
 
     // Image history.
@@ -114,7 +121,7 @@ internal sealed unsafe class App
         Gfx = new Gfx(forceWarp);
         Renderer = new WheelRenderer(Gfx, Overlay, SliceDef.From(cfg.Slices));
         Renderer.WheelName = cfg.WheelName;
-        Renderer.SetTheme(Theme.ByName(cfg.Config?.Theme ?? "Aurora"));
+        ApplyAppearance(cfg.Appearance);
         _actions = new Actions(_tray, Notify);
         _icons = new IconLoader(_tray);
         _capture = new CaptureOverlay(Gfx, this, captureHwnd);
@@ -140,71 +147,117 @@ internal sealed unsafe class App
         if (configErrors.Count > 0) ShowConfigErrors(configErrors);
         LoadIcons();
         _settings.Watch(_tray);
+        if (!BenchMode) _pipe = new PipeServer(_tray);
         ScheduleTrim();
     }
 
     // ───────────────────────── settings.json ─────────────────────────
 
     /// <summary>Called on the UI thread when the file changes (debounced): applies a good file, reports a bad one.</summary>
-    private void ReloadConfig()
+    private void ReloadConfig(bool quiet = false)
     {
         if (!_settings.Load(out var errors))
         {
-            if (errors.Count > 0) ShowConfigErrors(errors);
+            if (errors.Count > 0)
+            {
+                if (quiet) _configErrors = errors; else ShowConfigErrors(errors);
+            }
             return;
         }
+        _configErrors = [];
         var cfg = _settings.Current;
         if (IsOpen) Close();
         ReleaseIcons();
         Renderer.SetSlices(SliceDef.From(cfg.Slices));
         Renderer.WheelName = cfg.WheelName;
-        var theme = Theme.ByName(cfg.Config?.Theme ?? "Aurora");
-        if (theme != Renderer.Theme) Renderer.SetTheme(theme);
+        ApplyAppearance(cfg.Appearance);
         string? want = _hotkeyOverride ?? cfg.Config?.Hotkey;
         if (want != null && Hotkey.TryParse(want, out var hk) && (!_hotkeyOk || hk != ActiveHotkey))
         {
             if (_hotkeyOk) PInvoke.UnregisterHotKey(Overlay, HotkeyId);
             _hotkeyOk = false;
-            if (RegisterHotkey(want) is { } n) Notify(n.Title, n.Text, true);
+            if (RegisterHotkey(want) is { } n && !quiet) Notify(n.Title, n.Text, true);
             UpdateTrayTip();
         }
         LoadIcons();
         Log.Write($"settings.json reloaded: {cfg.Slices.Count} slices");
-        Notify("Settings updated", $"{cfg.WheelName} · {cfg.Slices.Count} slices · {(_hotkeyOk ? ActiveHotkey.ToString() : "no shortcut")}", false);
+        if (!quiet) Notify("Settings updated", $"{cfg.WheelName} · {cfg.Slices.Count} slices · {(_hotkeyOk ? ActiveHotkey.ToString() : "no shortcut")}", false);
     }
 
-    private void ShowConfigErrors(IReadOnlyList<string> errors) =>
+    /// <summary>
+    /// Theme (or Windows light/dark for "Auto"), slice colours (theme palette, Windows accent or custom) and size.
+    /// Re-run when settings change and when Windows' own colours change.
+    /// </summary>
+    private void ApplyAppearance(Appearance a)
+    {
+        _look = a;
+        var t = Theme.ByName(a.ThemeFor(SystemLook.AppsUseLightTheme));
+        uint rgb = a.Accent switch { AccentMode.Windows => SystemLook.AccentRgb, AccentMode.Custom => a.AccentRgb, _ => 0 };
+        if (a.Accent != AccentMode.Theme) t = t.WithAccent(rgb);
+        string key = $"{t.Name}|{a.Accent}|{rgb:X6}";
+        if (key != _themeKey)
+        {
+            _themeKey = key;
+            Renderer.SetTheme(t);
+            Log.Write($"Look: {t.Name}{(a.FollowsSystem ? " (matches Windows)" : "")}, colours {a.Accent}{(rgb != 0 ? $" #{rgb:X6}" : "")}, size {a.SizeName}");
+        }
+        if (Renderer.Scale != a.Scale)
+        {
+            if (IsOpen) Close();
+            Renderer.Scale = a.Scale;   // takes effect at the next open (SetDpi)
+        }
+        bool ring = a.SubMenus == SubMenuStyle.Ring;
+        if (ring != UseRing)
+        {
+            if (IsOpen) Close();
+            UseRing = ring;
+            Renderer.SetRingMode(ring);
+            Log.Write($"Sub-menus: {(ring ? "outer ring" : "new wheel")}");
+        }
+    }
+
+    private void OnSystemColorsChanged()
+    {
+        if (_look.FollowsSystem || _look.Accent == AccentMode.Windows) ApplyAppearance(_look);
+    }
+
+    private void ShowConfigErrors(IReadOnlyList<string> errors)
+    {
+        _configErrors = errors;
         Notify(errors.Count == 1 ? "settings.json has a problem" : $"settings.json has {errors.Count} problems",
             errors[0] + " Spoke keeps using your last working settings.", true);
+    }
 
     private void LoadIcons()
     {
         int gen = ++_configGeneration;
         var apps = new List<(int, string)>();
-        for (int i = 0; i < _slices.Length; i++)
-            if (_slices[i].Def.Kind == SliceKind.App && _slices[i].Def.Icon == null) apps.Add((i, _slices[i].Def.Target));
+        var root = RootSlices;
+        for (int i = 0; i < root.Length; i++)
+            if (root[i].Def.Kind == SliceKind.App && root[i].Def.Icon == null) apps.Add((i, root[i].Def.Target));
         _icons.Load(gen, apps);
     }
 
     private void OnIconsReady()
     {
         bool any = false;
+        var root = RootSlices;
         while (_icons.Results.TryDequeue(out var r))
         {
-            if (r.Generation != _configGeneration || r.Index >= _slices.Length) continue;
-            var s = _slices[r.Index];
+            if (r.Generation != _configGeneration || r.Index >= root.Length) continue;
+            var s = root[r.Index];
             Gfx.Release(s.Icon);
             fixed (byte* d = r.Pixels.Data) s.Icon = Gfx.Bitmap(d, r.Pixels.Width, r.Pixels.Height, r.Pixels.Stride);
             any = true;
         }
-        if (!any) return;
+        if (!any || _subStack.Count > 0) return;   // a sub-wheel is showing; the main wheel re-caches on close
         Renderer.ReleaseCache();
         if (IsOpen) Renderer.Draw(_view);
     }
 
     private void ReleaseIcons()
     {
-        foreach (var s in _slices) { Gfx.Release(s.Icon); s.Icon = null; }
+        foreach (var s in RootSlices) { Gfx.Release(s.Icon); s.Icon = null; }
     }
 
     /// <summary>Thread-safe: queue a toast for the UI thread.</summary>
@@ -292,6 +345,25 @@ internal sealed unsafe class App
                 if (IsOutsideClient(lParam)) Close(); else ExitQuery();
                 return true;
 
+            case PInvoke.WM_MOUSEMOVE when hwnd == Overlay && IsOpen && Renderer.Ring != null:
+            {
+                int item = RingHitClient(lParam);
+                SetHovers(item >= 0 ? -1 : HitTestClient(lParam), item);
+                return true;
+            }
+
+            case PInvoke.WM_LBUTTONUP when hwnd == Overlay && IsOpen && Renderer.Ring != null:
+            {
+                int item = RingHitClient(lParam);
+                if (item >= 0) { RunRingItem(item); return true; }
+                int s = HitTestClient(lParam);
+                if (s == Renderer.Ring.Parent) ExitSub();               // the open slice again: fold the band
+                else if (s >= 0) { CloseBand(); Run(s, copyOnly: (wParam.Value & 0x0004) != 0); }
+                else if (IsOutsideClient(lParam)) Close();
+                else ExitSub();                                          // the hub goes back
+                return true;
+            }
+
             case PInvoke.WM_MOUSEMOVE when hwnd == Overlay && IsOpen:
                 SetHover(HitTestClient(lParam));
                 return true;
@@ -302,12 +374,12 @@ internal sealed unsafe class App
                 bool shift = (wParam.Value & 0x0004) != 0;   // MK_SHIFT
                 if (s >= 0) Run(s, copyOnly: shift);
                 else if (_view.Clips && !IsOutsideClient(lParam)) ExitClips();   // the hub goes back
-                else Close();
+                else if (IsOutsideClient(lParam) || !ExitSub()) Close();
                 return true;
             }
 
             case PInvoke.WM_RBUTTONUP when hwnd == Overlay && IsOpen:
-                if (_view.Query) ExitQuery(); else if (_view.Clips) ExitClips(); else Close();
+                if (_view.Query) ExitQuery(); else if (_view.Clips) ExitClips(); else if (!ExitSub()) Close();
                 return true;
 
             case PInvoke.WM_MOUSEWHEEL when hwnd == Overlay && IsOpen && _view.Clips:
@@ -333,6 +405,10 @@ internal sealed unsafe class App
                 PInvoke.SetTimer(_tray, ClipTimerId, 150, null);
                 return true;
 
+            case PInvoke.WM_SETTINGCHANGE when hwnd == _tray:
+            case WM_DWMCOLORIZATIONCOLORCHANGED when hwnd == _tray:
+                OnSystemColorsChanged();
+                return false;
             case WM_APP_CONFIG when hwnd == _tray:
                 PInvoke.SetTimer(_tray, ConfigTimerId, 250, null);   // editors write in bursts
                 return true;
@@ -340,6 +416,10 @@ internal sealed unsafe class App
             case PInvoke.WM_TIMER when hwnd == _tray && wParam.Value == ConfigTimerId:
                 PInvoke.KillTimer(_tray, ConfigTimerId);
                 ReloadConfig();
+                return true;
+
+            case WM_APP_PIPE when hwnd == _tray:
+                ServePipe();
                 return true;
 
             case WM_APP_ICONS when hwnd == _tray:
@@ -402,7 +482,8 @@ internal sealed unsafe class App
         Renderer.SetDpi(dpiX);   // no-op unless this monitor's DPI differs from the last open
 
         int extentPx = Renderer.PixelSize / 2;
-        int ringPx = (int)MathF.Ceiling((_layout.OuterRadius + WheelRenderer.Lift + 4) * dpiX / 96f);
+        float reach = UseRing ? RingLayout.Reach(_layout.OuterRadius) : _layout.OuterRadius + WheelRenderer.Lift;
+        int ringPx = (int)MathF.Ceiling((reach + 4) * Renderer.Dpi / 96f);
         (_centerX, _centerY) = WheelLayout.ClampCenter(pt.X, pt.Y, ringPx, _work.left, _work.top, _work.right, _work.bottom);
 
         _view.Clips = clips;
@@ -446,6 +527,7 @@ internal sealed unsafe class App
         PInvoke.SetWindowPos(Overlay, HWND.Null, 0, 0, 0, 0,
             SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_HIDEWINDOW | SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOZORDER);
         KeyHook.Uninstall();
+        ResetSubs();
         _view.Hover = -1;
         _view.Clips = false;
         _view.Query = false;
@@ -473,7 +555,9 @@ internal sealed unsafe class App
     {
         int x = (short)(lParam.Value & 0xFFFF) + _work.left, y = (short)((lParam.Value >> 16) & 0xFFFF) + _work.top;
         float scale = 96f / Renderer.Dpi;
-        return _layout.IsOutside((x - _centerX) * scale, (y - _centerY) * scale);
+        float dx = (x - _centerX) * scale, dy = (y - _centerY) * scale;
+        if (Renderer.Ring is { } band && band.Layout.HitTest(dx, dy) >= 0) return false;
+        return _layout.IsOutside(dx, dy);
     }
 
     private int HitTestScreen(int x, int y)
@@ -484,11 +568,12 @@ internal sealed unsafe class App
 
     private void OnKey(VIRTUAL_KEY vk)
     {
+        if (Renderer.Ring is { } band && !_view.Clips) { OnRingKey(vk, band); return; }
         switch (vk)
         {
             case VIRTUAL_KEY.VK_ESCAPE:
             case VIRTUAL_KEY.VK_BACK:
-                if (_view.Clips) ExitClips(); else Close();
+                if (_view.Clips) ExitClips(); else if (!ExitSub()) Close();
                 return;
             case VIRTUAL_KEY.VK_RETURN: if (_view.Hover >= 0) Run(_view.Hover, copyOnly: KeyHook.IsDown(VIRTUAL_KEY.VK_SHIFT)); return;
             case VIRTUAL_KEY.VK_RIGHT or VIRTUAL_KEY.VK_DOWN: SetHover(_layout.Step1(_view.Hover, 1)); break;
@@ -522,6 +607,7 @@ internal sealed unsafe class App
 
         var s = _slices[slice];
         if (BenchMode) { Close(); return; }   // the bench never launches anything
+        if (s.OnRun != null || s.OnOpen != null) { RunGenerated(s); return; }
         if (s.Def.Kind == SliceKind.Search) { EnterQuery(slice); return; }
         switch (s.Tool)
         {
@@ -535,6 +621,9 @@ internal sealed unsafe class App
             case ToolKind.ColorPicker:
                 Close();
                 _capture.Begin(CaptureMode.ColorPicker);
+                return;
+            case ToolKind.Files or ToolKind.TextTools or ToolKind.Generate or ToolKind.System:
+                if (ToolWheel(s.Tool) is { } w) EnterSub(w, slice);
                 return;
             default:
                 Close();
@@ -789,7 +878,7 @@ internal sealed unsafe class App
         nid.uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_MESSAGE | NOTIFY_ICON_DATA_FLAGS.NIF_ICON | NOTIFY_ICON_DATA_FLAGS.NIF_TIP;
         nid.uCallbackMessage = WM_APP_TRAY;
         nid.hIcon = _icon;
-        nid.szTip = _hotkeyOk ? $"Spoke · {ActiveHotkey}" : "Spoke";
+        nid.szTip = (_hotkeyOk ? $"Spoke · {ActiveHotkey}" : "Spoke") + (_keepAwake ? " · keeping awake" : "");
         PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_ADD, &nid);
     }
 
@@ -815,22 +904,37 @@ internal sealed unsafe class App
 
     private void OnTray(uint mouseMsg)
     {
-        if (mouseMsg == PInvoke.WM_LBUTTONDBLCLK) { Open(Stopwatch.GetTimestamp()); return; }
+        if (mouseMsg == PInvoke.WM_LBUTTONDBLCLK) { OpenSettings(); return; }
         if (mouseMsg != PInvoke.WM_RBUTTONUP && mouseMsg != PInvoke.WM_CONTEXTMENU) return;
 
         HMENU menu = PInvoke.CreatePopupMenu();
         Append(menu, CmdOpen, _hotkeyOk ? $"Open wheel\t{ActiveHotkey}" : "Open wheel");
         Append(menu, CmdClips, "Open Clips (copied images)");
+        PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
         HMENU themes = PInvoke.CreatePopupMenu();
-        for (int i = 0; i < Theme.All.Length; i++) Append(themes, CmdTheme0 + i, Theme.All[i].Name);
-        int current = Array.IndexOf(Theme.All, Renderer.Theme);
-        PInvoke.CheckMenuRadioItem(themes, (uint)CmdTheme0, (uint)(CmdTheme0 + Theme.All.Length - 1), (uint)(CmdTheme0 + current), 0 /* MF_BYCOMMAND */);
-        fixed (char* t = "Theme") PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_POPUP, (nuint)(nint)themes.Value, t);
+        Append(themes, CmdThemeAuto, $"Match Windows ({_look.LightTheme} / {_look.DarkTheme})", check: _look.FollowsSystem);
+        PInvoke.AppendMenu(themes, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
+        for (int i = 0; i < Theme.All.Length; i++) Append(themes, CmdTheme0 + i, Theme.All[i].Name, check: !_look.FollowsSystem && _look.Theme == Theme.All[i].Name);
+        SubMenu(menu, themes, "Theme");
+        HMENU colours = PInvoke.CreatePopupMenu();
+        Append(colours, CmdAccentTheme, "Theme colours", check: _look.Accent == AccentMode.Theme);
+        Append(colours, CmdAccentWindows, "Windows accent colour", check: _look.Accent == AccentMode.Windows);
+        if (_look.Accent == AccentMode.Custom) Append(colours, 0, $"Custom #{_look.AccentRgb:X6} (settings.json)", enabled: false, check: true);
+        SubMenu(menu, colours, "Colours");
+        HMENU sizes = PInvoke.CreatePopupMenu();
+        for (int i = 0; i < Appearance.Sizes.Length; i++)
+        {
+            var (name, scale) = Appearance.Sizes[i];
+            string label = name switch { "S" => "Small", "M" => "Medium", "L" => "Large", _ => "Extra large" };
+            Append(sizes, CmdSize0 + i, $"{label}\t{scale * 100:0}%", check: MathF.Abs(_look.Scale - scale) < 0.001f);
+        }
+        SubMenu(menu, sizes, "Size");
         PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
         int n = _clips.Count;
         Append(menu, CmdClearClips, n > 0 ? $"Clear image history ({n})" : "Clear image history", enabled: n > 0);
         Append(menu, CmdPause, _paused ? "Resume" : "Pause (wheel and image history)");
         PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
+        Append(menu, CmdSettings, "Settings…");
         Append(menu, CmdEditSettings, "Edit settings.json…");
         Append(menu, CmdAutostart, "Start with Windows", check: Autostart.IsEnabled);
         PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
@@ -841,6 +945,19 @@ internal sealed unsafe class App
             pt.X, pt.Y, 0, _tray, null).Value;
         PInvoke.DestroyMenu(menu);   // destroys the submenu too
         if (cmd != 0) OnCommand(cmd);
+    }
+
+    private static void SubMenu(HMENU menu, HMENU sub, string text)
+    {
+        fixed (char* t = text) PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_POPUP, (nuint)(nint)sub.Value, t);
+    }
+
+    /// <summary>A look change from the tray: apply now, save to settings.json, and show the wheel.</summary>
+    private void SetLook(Appearance look, string key, string value)
+    {
+        ApplyAppearance(look);
+        _settings.SaveValue(key, value);
+        Open(Stopwatch.GetTimestamp());
     }
 
     private static void Append(HMENU menu, int id, string text, bool enabled = true, bool check = false)
@@ -861,6 +978,7 @@ internal sealed unsafe class App
                 ReleaseThumbs();
                 break;
             case CmdQuit: Quit(); break;
+            case CmdSettings: OpenSettings(); break;
             case CmdEditSettings:
                 _actions.Run(new Slice(SliceKind.App, "settings.json", "", null, Target: "notepad.exe", Args: "\"" + Settings.FilePath + "\""));
                 break;
@@ -868,10 +986,15 @@ internal sealed unsafe class App
                 if (!Autostart.Set(!Autostart.IsEnabled)) Notify("Couldn't change start-up", "Windows didn't allow the change.", true);
                 break;
             case >= CmdTheme0 when id < CmdTheme0 + Theme.All.Length:
-                var theme = Theme.All[id - CmdTheme0];
-                Renderer.SetTheme(theme);
-                _settings.SaveValue("theme", theme.Name);
-                Open(Stopwatch.GetTimestamp());   // show it
+                string theme = Theme.All[id - CmdTheme0].Name;
+                SetLook(_look with { Theme = theme }, "theme", theme);
+                break;
+            case CmdThemeAuto: SetLook(_look with { Theme = Appearance.Auto }, "theme", Appearance.Auto); break;
+            case CmdAccentTheme: SetLook(_look with { Accent = AccentMode.Theme }, "accent", "theme"); break;
+            case CmdAccentWindows: SetLook(_look with { Accent = AccentMode.Windows }, "accent", "windows"); break;
+            case >= CmdSize0 when id < CmdSize0 + Appearance.Sizes.Length:
+                var size = Appearance.Sizes[id - CmdSize0];
+                SetLook(_look with { Scale = size.Scale }, "size", size.Name);
                 break;
         }
     }
@@ -884,6 +1007,7 @@ internal sealed unsafe class App
         var nid = TrayData();
         PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_DELETE, &nid);
         if (_hotkeyOk) PInvoke.UnregisterHotKey(Overlay, HotkeyId);
+        _pipe?.Stop();
         PInvoke.PostQuitMessage(0);
     }
 

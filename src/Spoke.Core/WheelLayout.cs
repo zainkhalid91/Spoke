@@ -81,3 +81,70 @@ public readonly struct WheelLayout
         return (cx, cy);
     }
 }
+
+/// <summary>
+/// The outer band of options that opens around a slice (subMenus "ring"). Items sit side by side in an arc
+/// centred on the parent slice's angle, between <see cref="InnerRadius"/> and <see cref="OuterRadius"/>.
+/// Each item spans a fixed arc length, so a 3-item band is short and a 10-item band wraps further round.
+/// </summary>
+public readonly struct RingLayout
+{
+    public const int MaxItems = 12;
+    /// <summary>Target width of one item along the band's middle line, in DIPs.</summary>
+    public const float ItemArc = 66f;
+    public const float Width = 70f;
+    /// <summary>Space between the wheel's edge and the band.</summary>
+    public const float Gap = 10f;
+
+    public readonly int Count;
+    public readonly float Center;        // angle of the parent slice (radians, screen space)
+    public readonly float InnerRadius, OuterRadius;
+    public readonly float Step;          // angle per item
+    public readonly float GapAngle;      // half-gap applied on each side of an item
+
+    public RingLayout(int count, float centerAngle, float wheelOuterRadius)
+    {
+        if (count < 1 || count > MaxItems) throw new ArgumentOutOfRangeException(nameof(count));
+        Count = count;
+        Center = centerAngle;
+        InnerRadius = wheelOuterRadius + Gap;
+        OuterRadius = InnerRadius + Width;
+        float mid = (InnerRadius + OuterRadius) / 2f;
+        // Never wrap all the way round: at most 300° so the band reads as growing out of its slice.
+        Step = MathF.Min(ItemArc / mid, MathF.Tau * (300f / 360f) / count);
+        GapAngle = 2.2f / mid;
+    }
+
+    /// <summary>How far the band reaches from the wheel centre (for the drawing surface and screen clamping).</summary>
+    public static float Reach(float wheelOuterRadius) => wheelOuterRadius + Gap + Width;
+
+    public float Start => Center - Step * Count / 2f;
+
+    public float CenterAngle(int item) => Start + (item + 0.5f) * Step;
+
+    public (float Start, float End) ItemAngles(int item)
+    {
+        float a = Start + item * Step;
+        return (a + GapAngle, a + Step - GapAngle);
+    }
+
+    /// <summary>The item under a point (relative to the wheel centre), or -1. A little slack on both edges of the band.</summary>
+    public int HitTest(float dx, float dy)
+    {
+        float d2 = dx * dx + dy * dy;
+        float r1 = InnerRadius - Gap / 2f, r2 = OuterRadius + WheelLayout.EdgeMargin;
+        if (d2 < r1 * r1 || d2 > r2 * r2) return -1;
+        float a = MathF.Atan2(dy, dx) - Start;
+        a %= MathF.Tau;
+        if (a < 0) a += MathF.Tau;
+        int i = (int)(a / Step);
+        return i < Count ? i : -1;
+    }
+
+    /// <summary>Next item for arrow keys, stopping at the ends (the band isn't a loop). -1 goes to the first.</summary>
+    public int Step1(int current, int direction)
+    {
+        if (current < 0) return direction > 0 ? 0 : Count - 1;
+        return Math.Clamp(current + direction, 0, Count - 1);
+    }
+}

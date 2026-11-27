@@ -139,6 +139,32 @@ internal static unsafe class ClipboardIO
         }
     }
 
+    /// <summary>Paths of files copied in Explorer (CF_HDROP), or none.</summary>
+    public static string[] GetFiles(HWND owner)
+    {
+        const uint CF_HDROP = 15;
+        if (!PInvoke.IsClipboardFormatAvailable(CF_HDROP) || !OpenClipboard(owner)) return [];
+        try
+        {
+            var h = PInvoke.GetClipboardData(CF_HDROP);
+            if (h.IsNull) return [];
+            var drop = (Windows.Win32.UI.Shell.HDROP)(nint)h.Value;
+            uint n = PInvoke.DragQueryFile(drop, 0xFFFFFFFF, null, 0);
+            var files = new List<string>((int)Math.Min(n, 500));
+            char* buf = stackalloc char[1024];
+            for (uint i = 0; i < n && i < 500; i++)
+            {
+                uint len = PInvoke.DragQueryFile(drop, i, buf, 1024);
+                if (len > 0) files.Add(new string(buf, 0, (int)len));
+            }
+            return [.. files];
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
     // Formats whose data is a GDI/metafile handle, not memory; they can't be copied byte-for-byte (Windows
     // re-synthesises CF_BITMAP and friends from CF_DIB anyway).
     private static readonly HashSet<uint> HandleFormats = [2 /* BITMAP */, 3 /* METAFILEPICT */, 9 /* PALETTE */, 14 /* ENHMETAFILE */, 0x80, 0x82, 0x83, 0x8E];

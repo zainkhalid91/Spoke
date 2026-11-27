@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <AssemblyName>SpokeSettings</AssemblyName>
+    <RootNamespace>Spoke.Settings</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWinUI>true</UseWinUI>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\Spoke.Daemon\spoke.ico</ApplicationIcon>
+
+    <!-- Unpackaged, carries its own Windows App SDK runtime: nothing to install. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+
+    <!-- Native AOT: starts fast, no JIT. Settings runs only while open. -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="..\Spoke.Daemon\spoke.ico" Link="spoke.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- An unpackaged AOT publish leaves out the app's own resources.pri (the compiled XAML), and WinUI then
+       fails at start-up with a stowed exception. Copy it next to the exe. -->
+  <Target Name="CopyAppPriOnPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(OutDir)$(AssemblyName).pri" DestinationFolder="$(PublishDir)" Condition="Exists('$(OutDir)$(AssemblyName).pri')" />
+  </Target>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Spoke.Core\Spoke.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.7.0" />
+  </ItemGroup>
+
+</Project>

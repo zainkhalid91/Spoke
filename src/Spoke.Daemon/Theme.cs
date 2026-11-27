@@ -61,7 +61,37 @@ internal sealed class Theme
         Hues = Palette(0xF5A524),
     };
 
-    public static readonly Theme[] All = [Aurora, Ember, Paper, Graphite];
+    /// <summary>
+    /// Neutral near-black glass where the colour lives in the icons: no tinted tiles, vivid glyphs, and a bold
+    /// filled hover in the slice's colour.
+    /// </summary>
+    public static readonly Theme Onyx = new()
+    {
+        Name = "Onyx", Light = false,
+        RingInner = C(0x1A1A1D), RingOuter = C(0x0F0F11), Stroke = C(0xFFFFFF, 0.06f),
+        HubTop = C(0x19191C), HubBottom = C(0x09090A), HubStroke = C(0xFFFFFF, 0.08f),
+        Text = C(0xF4F4F6), TextDim = C(0xA6A7AE), TextFaint = C(0x63646B),
+        ShadowAlpha = 0.6f, HighlightAlpha = 0.04f, TileAlpha = 0f, TileAlphaHover = 0.0f, GlowAlpha = 0.5f,
+        Hues = Palette(0xFF5A4E, 0xFF9F1C, 0xFFD23F, 0x3DDC84, 0x2EC4F1, 0x4D7CFE, 0xA66CFF, 0xFF5CA8),
+    };
+
+    public static readonly Theme[] All = [Aurora, Ember, Paper, Graphite, Onyx];
+
+    /// <summary>The same theme with every slice in one colour (the Windows accent or a custom one).</summary>
+    public Theme WithAccent(uint rgb)
+    {
+        var c = C(rgb);
+        // On light themes a pale accent would vanish: darken it a little so tiles and glows stay visible.
+        if (Light && 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b > 0.6f) c = new D2D1_COLOR_F { r = c.r * 0.7f, g = c.g * 0.7f, b = c.b * 0.7f, a = 1 };
+        return new Theme
+        {
+            Name = Name, Light = Light,
+            RingInner = RingInner, RingOuter = RingOuter, Stroke = Stroke, HubTop = HubTop, HubBottom = HubBottom, HubStroke = HubStroke,
+            Text = Text, TextDim = TextDim, TextFaint = TextFaint,
+            ShadowAlpha = ShadowAlpha, HighlightAlpha = HighlightAlpha, TileAlpha = TileAlpha, TileAlphaHover = TileAlphaHover, GlowAlpha = GlowAlpha,
+            Hues = [c],
+        };
+    }
 
     public static Theme ByName(string? name) => All.FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Aurora;
 }

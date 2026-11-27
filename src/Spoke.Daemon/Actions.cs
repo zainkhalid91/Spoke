@@ -164,9 +164,14 @@ internal sealed unsafe class Actions
     /// Types the text into the app that has focus (the wheel never took it). Short text goes in as Unicode
     /// keystrokes, which leaves the clipboard alone; long text is pasted, then the clipboard is put back.
     /// </summary>
-    private void TypeText(string template)
+    private void TypeText(string template) =>
+        TypeRaw(Tokens.Expand(template, DateTimeOffset.Now, () => ClipboardIO.GetText(_clipboardOwner)));
+
+    /// <summary>Types text exactly as given (no tokens): generators, text-tool results.</summary>
+    public void Type(string text) => Post(() => TypeRaw(text));
+
+    private void TypeRaw(string text)
     {
-        string text = Tokens.Expand(template, DateTimeOffset.Now, () => ClipboardIO.GetText(_clipboardOwner));
         if (text.Length == 0) return;
         WaitForModifiersUp();
 
@@ -181,6 +186,68 @@ internal sealed unsafe class Actions
         if (saved == null) return;
         Thread.Sleep(400);   // let the target app read the clipboard before it changes back
         ClipboardIO.Restore(_clipboardOwner, saved);
+    }
+
+    // ───────────────────────── text tools ─────────────────────────
+
+    /// <summary>
+    /// Applies a text tool to the selection in the focused app: copy it (Ctrl+C), transform, paste the result over
+    /// it, then put the user's clipboard back. With nothing selected it works on the clipboard text instead and
+    /// leaves the result there. Terminals get no Ctrl+C (it would stop the running program): clipboard only.
+    /// </summary>
+    public void Transform(TextTools.Op op, string label, bool alternate, bool terminal) => Post(() => TransformSelection(op, label, alternate, terminal));
+
+    private void TransformSelection(TextTools.Op op, string label, bool alternate, bool terminal)
+    {
+        WaitForModifiersUp();
+        List<(uint, byte[])>? saved = null;
+        bool fromSelection = false;
+        if (!terminal)
+        {
+            saved = ClipboardIO.Snapshot(_clipboardOwner);
+            uint seq = PInvoke.GetClipboardSequenceNumber();
+            KeyHook.SendCopy();
+            for (int i = 0; i < 40 && !fromSelection; i++)
+            {
+                Thread.Sleep(10);
+                fromSelection = PInvoke.GetClipboardSequenceNumber() != seq;
+            }
+            if (fromSelection) Thread.Sleep(30);   // let the app finish writing every format
+        }
+        string? text = ClipboardIO.GetText(_clipboardOwner);
+        void PutBack() { if (fromSelection && saved != null) ClipboardIO.Restore(_clipboardOwner, saved); }
+
+        if (string.IsNullOrEmpty(text))
+        {
+            PutBack();
+            _notify(label, "Select some text first (or copy it), then choose the tool.", true);
+            return;
+        }
+        if (op == TextTools.Op.Count)
+        {
+            PutBack();
+            _notify(fromSelection ? "Selection" : "Clipboard text", TextTools.Summary(text), false);
+            return;
+        }
+        string? result = TextTools.Apply(op, text, out string? error, alternate);
+        if (result == null)
+        {
+            PutBack();
+            _notify(label, error ?? "That didn't work on this text.", true);
+            return;
+        }
+        if (fromSelection)
+        {
+            if (!ClipboardIO.SetText(_clipboardOwner, result, markOwn: true)) return;
+            KeyHook.SendPaste();
+            Thread.Sleep(400);   // let the app read it before the clipboard changes back
+            PutBack();
+        }
+        else if (ClipboardIO.SetText(_clipboardOwner, result))
+        {
+            string one = result.ReplaceLineEndings(" ");
+            _notify(label + " · copied", one.Length > 60 ? one[..59] + "…" : one, false);
+        }
     }
 
     /// <summary>Waits (up to ~1 s) until Ctrl/Alt/Shift/Win from the shortcut are released, so they don't combine with the text.</summary>

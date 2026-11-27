@@ -16,6 +16,13 @@ internal static unsafe class Program
     {
         long t0 = Stopwatch.GetTimestamp();
         if (args.Contains("--focus-target")) { FocusTarget.Run(); return 0; }
+        int wi = Array.IndexOf(args, "--worker");
+        if (wi >= 0 && wi + 1 < args.Length) return Worker.Run(args[wi + 1]);   // a file job, not the daemon
+        if (args.Contains("--render"))
+        {
+            PInvoke.CoInitializeEx(null, COINIT.COINIT_APARTMENTTHREADED);
+            return RenderTool.Run(args);   // draws the wheel to a PNG, offscreen
+        }
 
         _singleInstance = PInvoke.CreateMutex(null, false, "Local\\Spoke.Daemon.SingleInstance");
         if (Marshal.GetLastPInvokeError() == (int)WIN32_ERROR.ERROR_ALREADY_EXISTS) return 1;
