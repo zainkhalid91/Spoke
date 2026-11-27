@@ -182,7 +182,9 @@ internal sealed unsafe partial class App
         _wheelSets = BuildWheels(cfg);
         SelectWheel(Math.Max(0, _wheelSets.FindIndex(w => w.Name == showing)));
         ApplyAppearance(cfg.Appearance);
-        if (RegisterWheelHotkeys() is { } wn && !quiet) Notify(wn.Title, wn.Text, true);
+        // Free every wheel's shortcut before taking new ones, so swapping shortcuts between wheels works.
+        foreach (int id in _wheelHotkeys.Keys) PInvoke.UnregisterHotKey(Overlay, id);
+        _wheelHotkeys.Clear();
         string? want = _hotkeyOverride ?? _wheelSets[0].Hotkey;
         if (want != null && Hotkey.TryParse(want, out var hk) && (!_hotkeyOk || hk != ActiveHotkey))
         {
@@ -191,6 +193,7 @@ internal sealed unsafe partial class App
             if (RegisterHotkey(want) is { } n && !quiet) Notify(n.Title, n.Text, true);
             UpdateTrayTip();
         }
+        if (RegisterWheelHotkeys() is { } wn && !quiet) Notify(wn.Title, wn.Text, true);
         LoadIcons();
         Log.Write($"settings.json reloaded: {_wheelSets.Count} wheel(s), {cfg.Slices.Count} slices on the first");
         if (!quiet) Notify("Settings updated", _wheelSets.Count > 1
@@ -1007,7 +1010,7 @@ internal sealed unsafe partial class App
         nid.uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_MESSAGE | NOTIFY_ICON_DATA_FLAGS.NIF_ICON | NOTIFY_ICON_DATA_FLAGS.NIF_TIP;
         nid.uCallbackMessage = WM_APP_TRAY;
         nid.hIcon = _icon;
-        nid.szTip = (_hotkeyOk ? $"Spoke · {ActiveHotkey}" : "Spoke") + (_keepAwake ? " · keeping awake" : "");
+        nid.szTip = TipText();
         PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_ADD, &nid);
     }
 
@@ -1015,9 +1018,11 @@ internal sealed unsafe partial class App
     {
         var nid = TrayData();
         nid.uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_TIP;
-        nid.szTip = _hotkeyOk ? $"Spoke · {ActiveHotkey}" : "Spoke";
+        nid.szTip = TipText();
         PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_MODIFY, &nid);
     }
+
+    private string TipText() => (_hotkeyOk ? $"Spoke · {ActiveHotkey}" : "Spoke") + (_keepAwake ? " · keeping awake" : "");
 
     private NOTIFYICONDATAW TrayData() => new() { cbSize = (uint)sizeof(NOTIFYICONDATAW), hWnd = _tray, uID = 1 };
 

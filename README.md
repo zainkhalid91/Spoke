@@ -6,6 +6,8 @@ Native and tiny: C# / .NET 10 Native AOT, Direct2D + DirectComposition overlay, 
 
 ![Spoke in its four themes: Aurora, Ember, Paper and Graphite](docs/themes.png)
 
+**[Download Spoke for Windows](https://github.com/zainkhalid91/Spoke/releases/latest)** (64-bit Windows 10 or 11): unzip anywhere, run `Spoke.exe`, press **Ctrl+Alt+Z**. Nothing to install. The build isn't code-signed yet, so SmartScreen may ask you to confirm (*More info → Run anyway*).
+
 **Status:** M1 done (config + real actions, below). M0 spike done (the wheel opens in 9–14 ms, focus never stolen; see [docs/SPIKE_REPORT.md](docs/SPIKE_REPORT.md)). M1a adds built-in tools and a new look:
 - **Screenshot** (slice 1): drag a region, click a window, or Space for the whole screen. Copied, saved to Pictures\Screenshots, and added to Clips.
 - **Color picker** (slice 2): magnifier loupe, arrow keys to nudge, keys 1–n copy a format. Uses your PowerToys Color Picker formats and colour history when present (format code from PowerToys, MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

@@ -131,13 +131,13 @@ internal sealed class ConfigStore : IDisposable
         }
         string current;
         try { current = File.Exists(FilePath) ? ReadShared(FilePath) : ""; }
-        catch (IOException ex) { Saved?.Invoke("Couldn't read settings.json: " + ex.Message, true); return [ex.Message]; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Saved?.Invoke("Couldn't read settings.json: " + ex.Message, true); return [ex.Message]; }
         string text = ConfigLoader.WithConfig(current, Config);
         if (text == current) return [];
         try
         {
-            File.WriteAllText(FilePath, text);
-            _lastText = text;
+            _lastText = text;   // first: the watcher may fire as soon as the new file is renamed in
+            AtomicFile.WriteAllText(FilePath, text);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

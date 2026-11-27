@@ -392,8 +392,9 @@ internal static unsafe class Worker
             foreach (var a in codec) psi.ArgumentList.Add(a);
             psi.ArgumentList.Add(tmpOut);
             using var p = Process.Start(psi)!;
-            string err = p.StandardError.ReadToEnd();
+            var errRead = p.StandardError.ReadToEndAsync();   // async, so the timeout below can fire
             if (!p.WaitForExit(120_000)) { p.Kill(true); throw new TimeoutException("ffmpeg took too long."); }
+            string err = errRead.Result;
             if (p.ExitCode != 0 || !File.Exists(tmpOut)) throw new IOException("ffmpeg failed: " + err.Trim().Split('\n').LastOrDefault());
             File.Move(tmpOut, output);
         }
@@ -451,15 +452,16 @@ internal static class FileJobs
     private static void RunJob(FileJob job, string what, Actions.NotifyFn notify)
     {
         string dir = Path.Combine(Path.GetTempPath(), "Spoke", "jobs");
-        Directory.CreateDirectory(dir);
         string id = Guid.NewGuid().ToString("N");
         string jobPath = Path.Combine(dir, id + ".json");
         job.ResultPath = Path.Combine(dir, id + ".result.json");
-        File.WriteAllText(jobPath, JsonSerializer.Serialize(job, FileJobJson.Default.FileJob));
         bool slow = job.Op == "office" || job.Inputs.Count > 3;
         if (slow) notify(what + "…", job.Op == "office" ? "Working in the background with Office." : $"{job.Inputs.Count} files, in the background.", false);
         try
         {
+            // Inside the try: this runs on a background thread, where an unhandled exception would end Spoke.
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(jobPath, JsonSerializer.Serialize(job, FileJobJson.Default.FileJob));
             var psi = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
             psi.ArgumentList.Add("--worker");
             psi.ArgumentList.Add(jobPath);
@@ -476,13 +478,13 @@ internal static class FileJobs
             var r = File.Exists(job.ResultPath) ? JsonSerializer.Deserialize(File.ReadAllText(job.ResultPath), FileJobJson.Default.FileJobResult) : null;
             Report(r, what, notify);
         }
-        catch (Exception ex) when (ex is IOException or JsonException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             notify("Conversion failed", ex.Message, true);
         }
         finally
         {
-            try { File.Delete(jobPath); File.Delete(job.ResultPath); } catch (IOException) { }
+            try { File.Delete(jobPath); File.Delete(job.ResultPath); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }
 

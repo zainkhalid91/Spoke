@@ -22,7 +22,29 @@ internal sealed unsafe partial class App : IDropHandler
     private long _dwellSince;
     private int _buttonUpTicks;
     private (int W, int H) _dropSize;
-    private Process? _estimator;
+    /// <summary>The estimate in flight: its worker can be killed once the wheel or its files change.</summary>
+    private sealed class EstimateRun
+    {
+        public Process? Process;
+        public bool Cancelled;
+
+        public void Kill()
+        {
+            Process? p;
+            lock (this) { Cancelled = true; p = Process; }
+            try { if (p is { HasExited: false }) p.Kill(); }
+            catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception) { }
+        }
+
+        /// <summary>Worker thread, right after the process starts: kills it at once if the estimate was already dropped.</summary>
+        public void Started(Process p)
+        {
+            bool cancelled;
+            lock (this) { Process = p; cancelled = Cancelled; }
+            if (cancelled) Kill();
+        }
+    }
+    private EstimateRun? _estimator;
     private readonly System.Collections.Concurrent.ConcurrentQueue<(int Gen, FileJobResult? Result)> _estimates = new();
 
     /// <summary>Hovering a slice that opens more choices (Resize) this long while dragging opens them.</summary>
@@ -84,9 +106,10 @@ internal sealed unsafe partial class App : IDropHandler
         string formats = string.Join(',', items.Where(i => i.Key != null).Select(i => i.Key));
         if (files.Length == 0 || formats.Length == 0) return;
         var job = new FileJob { Op = "estimate", Arg = formats, Inputs = [.. files] };
+        var run = _estimator = new EstimateRun();
         var t = new Thread(() =>
         {
-            var r = FileJobs.RunForResult(job, 60_000, p => _estimator = p);
+            var r = FileJobs.RunForResult(job, 60_000, run.Started);
             _estimates.Enqueue((gen, r));
             PInvoke.PostMessage(_tray, WM_APP_ESTIMATE, default, default);
         }) { IsBackground = true, Name = "Spoke estimate" };
@@ -95,10 +118,8 @@ internal sealed unsafe partial class App : IDropHandler
 
     private void StopEstimate()
     {
-        var p = _estimator;
+        _estimator?.Kill();
         _estimator = null;
-        try { if (p is { HasExited: false }) p.Kill(); }
-        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception) { }
     }
 
     /// <summary>UI thread: a worker finished estimating. Fills in the badges if that wheel is still showing.</summary>
@@ -106,10 +127,21 @@ internal sealed unsafe partial class App : IDropHandler
     {
         while (_estimates.TryDequeue(out var e))
         {
-            if (e.Gen != _dropGen || !IsOpen || !_view.Drop || e.Result is not { } r) continue;
+            if (e.Gen != _dropGen || !IsOpen || !_view.Drop) continue;
+            var slices = _subStack.Count > 1 ? _subStack[1].Slices : _slices;   // the format wheel, even if Resize is open on top
+            if (e.Result is not { Estimates.Count: > 0 } r)
+            {
+                // No estimate (the image didn't decode, or the worker failed): say so, but still let a drop try,
+                // so the conversion reports the real problem.
+                Log.Write("Estimates: none" + (e.Result?.Errors.FirstOrDefault() is { } why ? $" ({why})" : ""));
+                foreach (var s in slices.Where(s => s.Key != null)) { s.Unavailable = false; s.Badge = "?"; }
+                Renderer.SetSlices(_slices);
+                Renderer.Draw(_view);
+                Renderer.Commit();
+                continue;
+            }
             Log.Write($"Estimates ({r.Width}×{r.Height}): " + string.Join(", ", r.Estimates.Select(kv => $"{kv.Key} {(kv.Value < 0 ? "n/a" : OutputNames.Size(kv.Value))}")));
             _dropSize = (r.Width, r.Height);
-            var slices = _subStack.Count > 1 ? _subStack[1].Slices : _slices;   // the format wheel, even if Resize is open on top
             foreach (var s in slices)
             {
                 if (s.Key == null) continue;

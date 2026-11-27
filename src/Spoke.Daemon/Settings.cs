@@ -38,7 +38,7 @@ internal sealed class Settings : IDisposable
             if (!File.Exists(FilePath))
             {
                 text = ConfigLoader.Serialize(ConfigLoader.Default());
-                File.WriteAllText(FilePath, text);
+                AtomicFile.WriteAllText(FilePath, text);
                 Log.Write("Created settings.json with the default wheel");
             }
             else text = ReadShared(FilePath);
@@ -102,7 +102,7 @@ internal sealed class Settings : IDisposable
     {
         try
         {
-            File.WriteAllText(FilePath, text);
+            AtomicFile.WriteAllText(FilePath, text);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

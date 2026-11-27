@@ -112,11 +112,16 @@ internal static unsafe partial class DropTarget
         {
             uint n = DragQueryFile(sm.Handle, 0xFFFFFFFF, null, 0);
             var files = new List<string>((int)Math.Min(n, 1000));
-            char* buf = stackalloc char[1024];
             for (uint i = 0; i < n && i < 1000; i++)
             {
-                uint len = DragQueryFile(sm.Handle, i, buf, 1024);
-                if (len > 0) files.Add(new string(buf, 0, (int)len));
+                uint need = DragQueryFile(sm.Handle, i, null, 0);   // long paths can exceed MAX_PATH
+                if (need == 0 || need > 32767) continue;
+                var buf = new char[need + 1];
+                fixed (char* b = buf)
+                {
+                    uint len = DragQueryFile(sm.Handle, i, b, need + 1);
+                    if (len > 0) files.Add(new string(b, 0, (int)len));
+                }
             }
             return [.. files];
         }
