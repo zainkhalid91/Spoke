@@ -28,6 +28,13 @@ internal static unsafe class KeyHook
 
     public static bool Installed => !_hook.IsNull;
 
+    /// <summary>
+    /// Typing mode (the wheel's search box): every key except modifiers and lock keys is swallowed and posted
+    /// with its scan code (lParam), so the overlay can turn it into text without ever taking focus.
+    /// Modifiers pass through so Shift/AltGr/Caps state stays real for ToUnicodeEx.
+    /// </summary>
+    public static volatile bool TextMode;
+
     public static void Install(HWND target, ReadOnlySpan<VIRTUAL_KEY> keys)
     {
         SetKeys(keys);
@@ -48,6 +55,34 @@ internal static unsafe class KeyHook
         if (!_hook.IsNull) { PInvoke.UnhookWindowsHookEx(_hook); _hook = default; }
         if (!_fg.IsNull) { PInvoke.UnhookWinEvent(_fg); _fg = default; }
         _target = HWND.Null;
+        TextMode = false;
+    }
+
+    private static bool IsModifier(uint vk) => vk is
+        0x10 or 0x11 or 0x12 or (>= 0xA0 and <= 0xA5) or   // Shift, Ctrl, Alt (and left/right)
+        0x5B or 0x5C or                                    // Win
+        0x14 or 0x90 or 0x91;                              // Caps, Num, Scroll lock
+
+    /// <summary>
+    /// The text a key produces with the current keyboard layout and modifier state (empty for keys that
+    /// type nothing, and for dead keys, which this simple box doesn't compose).
+    /// </summary>
+    public static string TextOf(uint vk, uint scan)
+    {
+        var state = stackalloc byte[256];
+        foreach (var k in (ReadOnlySpan<int>)[0x10, 0xA0, 0xA1, 0x11, 0xA2, 0xA3, 0x12, 0xA4, 0xA5])
+            if ((PInvoke.GetAsyncKeyState(k) & 0x8000) != 0) state[k] = 0x80;
+        if ((PInvoke.GetKeyState(0x14) & 1) != 0) state[0x14] = 1;   // Caps Lock
+        // Use the layout of the app being typed over, as if it received the keys.
+        HWND fg = PInvoke.GetForegroundWindow();
+        uint tid = PInvoke.GetWindowThreadProcessId(fg, null);
+        var hkl = PInvoke.GetKeyboardLayout(tid);
+        var buf = stackalloc char[8];
+        // Flag 0x4: don't change the keyboard state (no dead-key side effects for the real app later).
+        int n = PInvoke.ToUnicodeEx(vk, scan, state, new PWSTR(buf), 8, 0x4, hkl);
+        if (n <= 0) return "";
+        var s = new string(buf, 0, n);
+        return s.Length == 1 && char.IsControl(s[0]) ? "" : s;
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
@@ -56,13 +91,14 @@ internal static unsafe class KeyHook
         if (nCode == (int)PInvoke.HC_ACTION && !_target.IsNull)
         {
             var kb = (KBDLLHOOKSTRUCT*)lParam.Value;
-            if (kb->vkCode < 256 && Swallow[kb->vkCode])
+            uint vk = kb->vkCode;
+            if (vk < 256 && (TextMode ? !IsModifier(vk) : Swallow[vk]))
             {
                 uint m = (uint)wParam.Value;
                 if (m == PInvoke.WM_KEYDOWN || m == PInvoke.WM_SYSKEYDOWN)
                 {
                     LastKeyTicks = Stopwatch.GetTimestamp();
-                    PInvoke.PostMessage(_target, WM_APP_KEY, (WPARAM)(nuint)kb->vkCode, default);
+                    PInvoke.PostMessage(_target, WM_APP_KEY, (WPARAM)(nuint)vk, (LPARAM)(nint)(kb->scanCode | ((uint)kb->flags & 1) << 16));
                 }
                 return (LRESULT)1;   // swallow down and up
             }

@@ -26,11 +26,14 @@ internal sealed unsafe class App
     public const uint WM_APP_TRAY = PInvoke.WM_APP + 3;    // tray icon callback
     public const uint WM_APP_QUIT = PInvoke.WM_APP + 4;
     public const uint WM_APP_CLIPS = PInvoke.WM_APP + 5;   // image history changed (from the worker)
+    public const uint WM_APP_CONFIG = PInvoke.WM_APP + 6;  // settings.json changed on disk
+    public const uint WM_APP_ICONS = PInvoke.WM_APP + 7;   // app icons extracted
+    public const uint WM_APP_NOTICE = PInvoke.WM_APP + 8;  // a toast from the action thread
 
     private const int HotkeyId = 1;
-    private const nuint TrimTimerId = 7, ClipTimerId = 8;
+    private const nuint TrimTimerId = 7, ClipTimerId = 8, ConfigTimerId = 9;
     private const uint TrimAfterMs = 60_000;   // give memory back to Windows a minute after the wheel closes
-    private const int CmdOpen = 100, CmdPause = 101, CmdQuit = 102, CmdClips = 103, CmdClearClips = 104, CmdTheme0 = 110;
+    private const int CmdOpen = 100, CmdPause = 101, CmdQuit = 102, CmdClips = 103, CmdClearClips = 104, CmdEditSettings = 105, CmdAutostart = 106, CmdTheme0 = 110;
 
     public HWND Overlay { get; private set; }
     private readonly HWND _tray;
@@ -41,9 +44,14 @@ internal sealed unsafe class App
     public readonly WheelRenderer Renderer;
     private readonly CaptureOverlay _capture;
     private readonly Toast _toast;
-    private readonly SliceDef[] _slices;
-    private readonly WheelLayout _layout;
+    private SliceDef[] _slices => Renderer.Slices;
+    private WheelLayout _layout => Renderer.Layout;
     private readonly Settings _settings;
+    private readonly Actions _actions;
+    private readonly IconLoader _icons;
+    private int _configGeneration;
+    private readonly string? _hotkeyOverride;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(string Title, string Detail, bool Error)> _notices = new();
 
     // Image history.
     private readonly ClipStore _clips;
@@ -82,11 +90,13 @@ internal sealed unsafe class App
         .. WheelKeys, VIRTUAL_KEY.VK_BACK, VIRTUAL_KEY.VK_DELETE, VIRTUAL_KEY.VK_PRIOR, VIRTUAL_KEY.VK_NEXT, VIRTUAL_KEY.VK_TAB,
     ];
 
-    public App(SliceDef[] slices, bool forceWarp, string? preferredHotkey = null)
+    public App(bool forceWarp, string? preferredHotkey = null)
     {
-        _slices = slices;
         Instance = this;
-        _settings = Settings.Load();
+        _hotkeyOverride = preferredHotkey;
+        _settings = new Settings();
+        _settings.Load(out var configErrors);
+        var cfg = _settings.Current;
 
         HINSTANCE hinst = (HINSTANCE)(nint)PInvoke.GetModuleHandle((PCWSTR)null).Value;
         RegisterClass("SpokeOverlay", hinst, PInvoke.IDC_ARROW);
@@ -102,9 +112,11 @@ internal sealed unsafe class App
         _tray = Create("SpokeTray", hinst, WINDOW_EX_STYLE.WS_EX_TOOLWINDOW, WINDOW_STYLE.WS_POPUP);
 
         Gfx = new Gfx(forceWarp);
-        Renderer = new WheelRenderer(Gfx, Overlay, slices);
-        Renderer.SetTheme(Theme.ByName(_settings.Theme));
-        _layout = Renderer.Layout;
+        Renderer = new WheelRenderer(Gfx, Overlay, SliceDef.From(cfg.Slices));
+        Renderer.WheelName = cfg.WheelName;
+        Renderer.SetTheme(Theme.ByName(cfg.Config?.Theme ?? "Aurora"));
+        _actions = new Actions(_tray, Notify);
+        _icons = new IconLoader(_tray);
         _capture = new CaptureOverlay(Gfx, this, captureHwnd);
         _toast = new Toast(Gfx, this, toastHwnd);
 
@@ -122,10 +134,84 @@ internal sealed unsafe class App
         PInvoke.AddClipboardFormatListener(_tray);
 
         fixed (char* tb = "TaskbarCreated") _taskbarCreated = PInvoke.RegisterWindowMessage(tb);
-        var notice = RegisterHotkey(preferredHotkey);
+        var notice = RegisterHotkey(preferredHotkey ?? cfg.Config?.Hotkey);
         AddTrayIcon();
         if (notice is { } n) Balloon(n.Title, n.Text);
+        if (configErrors.Count > 0) ShowConfigErrors(configErrors);
+        LoadIcons();
+        _settings.Watch(_tray);
         ScheduleTrim();
+    }
+
+    // ───────────────────────── settings.json ─────────────────────────
+
+    /// <summary>Called on the UI thread when the file changes (debounced): applies a good file, reports a bad one.</summary>
+    private void ReloadConfig()
+    {
+        if (!_settings.Load(out var errors))
+        {
+            if (errors.Count > 0) ShowConfigErrors(errors);
+            return;
+        }
+        var cfg = _settings.Current;
+        if (IsOpen) Close();
+        ReleaseIcons();
+        Renderer.SetSlices(SliceDef.From(cfg.Slices));
+        Renderer.WheelName = cfg.WheelName;
+        var theme = Theme.ByName(cfg.Config?.Theme ?? "Aurora");
+        if (theme != Renderer.Theme) Renderer.SetTheme(theme);
+        string? want = _hotkeyOverride ?? cfg.Config?.Hotkey;
+        if (want != null && Hotkey.TryParse(want, out var hk) && (!_hotkeyOk || hk != ActiveHotkey))
+        {
+            if (_hotkeyOk) PInvoke.UnregisterHotKey(Overlay, HotkeyId);
+            _hotkeyOk = false;
+            if (RegisterHotkey(want) is { } n) Notify(n.Title, n.Text, true);
+            UpdateTrayTip();
+        }
+        LoadIcons();
+        Log.Write($"settings.json reloaded: {cfg.Slices.Count} slices");
+        Notify("Settings updated", $"{cfg.WheelName} · {cfg.Slices.Count} slices · {(_hotkeyOk ? ActiveHotkey.ToString() : "no shortcut")}", false);
+    }
+
+    private void ShowConfigErrors(IReadOnlyList<string> errors) =>
+        Notify(errors.Count == 1 ? "settings.json has a problem" : $"settings.json has {errors.Count} problems",
+            errors[0] + " Spoke keeps using your last working settings.", true);
+
+    private void LoadIcons()
+    {
+        int gen = ++_configGeneration;
+        var apps = new List<(int, string)>();
+        for (int i = 0; i < _slices.Length; i++)
+            if (_slices[i].Def.Kind == SliceKind.App && _slices[i].Def.Icon == null) apps.Add((i, _slices[i].Def.Target));
+        _icons.Load(gen, apps);
+    }
+
+    private void OnIconsReady()
+    {
+        bool any = false;
+        while (_icons.Results.TryDequeue(out var r))
+        {
+            if (r.Generation != _configGeneration || r.Index >= _slices.Length) continue;
+            var s = _slices[r.Index];
+            Gfx.Release(s.Icon);
+            fixed (byte* d = r.Pixels.Data) s.Icon = Gfx.Bitmap(d, r.Pixels.Width, r.Pixels.Height, r.Pixels.Stride);
+            any = true;
+        }
+        if (!any) return;
+        Renderer.ReleaseCache();
+        if (IsOpen) Renderer.Draw(_view);
+    }
+
+    private void ReleaseIcons()
+    {
+        foreach (var s in _slices) { Gfx.Release(s.Icon); s.Icon = null; }
+    }
+
+    /// <summary>Thread-safe: queue a toast for the UI thread.</summary>
+    private void Notify(string title, string detail, bool error)
+    {
+        _notices.Enqueue((title, detail, error));
+        PInvoke.PostMessage(_tray, WM_APP_NOTICE, default, default);
     }
 
     /// <summary>
@@ -199,6 +285,13 @@ internal sealed unsafe class App
                 else Open(Stopwatch.GetTimestamp());
                 return true;
 
+            case PInvoke.WM_MOUSEMOVE when hwnd == Overlay && IsOpen && _view.Query:
+                return true;   // hover is frozen while typing
+
+            case PInvoke.WM_LBUTTONUP when hwnd == Overlay && IsOpen && _view.Query:
+                if (IsOutsideClient(lParam)) Close(); else ExitQuery();
+                return true;
+
             case PInvoke.WM_MOUSEMOVE when hwnd == Overlay && IsOpen:
                 SetHover(HitTestClient(lParam));
                 return true;
@@ -214,7 +307,7 @@ internal sealed unsafe class App
             }
 
             case PInvoke.WM_RBUTTONUP when hwnd == Overlay && IsOpen:
-                if (_view.Clips) ExitClips(); else Close();
+                if (_view.Query) ExitQuery(); else if (_view.Clips) ExitClips(); else Close();
                 return true;
 
             case PInvoke.WM_MOUSEWHEEL when hwnd == Overlay && IsOpen && _view.Clips:
@@ -222,7 +315,8 @@ internal sealed unsafe class App
                 return true;
 
             case KeyHook.WM_APP_KEY when hwnd == Overlay && IsOpen:
-                OnKey((VIRTUAL_KEY)(ushort)wParam.Value);
+                if (_view.Query) OnQueryKey((uint)wParam.Value, (uint)(lParam.Value & 0xFFFF));
+                else OnKey((VIRTUAL_KEY)(ushort)wParam.Value);
                 return true;
 
             case KeyHook.WM_APP_FG when hwnd == Overlay && IsOpen:
@@ -237,6 +331,23 @@ internal sealed unsafe class App
                 // Apps often update the clipboard several times in a row; act once it settles.
                 _clipRetries = 0;
                 PInvoke.SetTimer(_tray, ClipTimerId, 150, null);
+                return true;
+
+            case WM_APP_CONFIG when hwnd == _tray:
+                PInvoke.SetTimer(_tray, ConfigTimerId, 250, null);   // editors write in bursts
+                return true;
+
+            case PInvoke.WM_TIMER when hwnd == _tray && wParam.Value == ConfigTimerId:
+                PInvoke.KillTimer(_tray, ConfigTimerId);
+                ReloadConfig();
+                return true;
+
+            case WM_APP_ICONS when hwnd == _tray:
+                OnIconsReady();
+                return true;
+
+            case WM_APP_NOTICE when hwnd == _tray:
+                while (_notices.TryDequeue(out var nt)) _toast!.ShowMessage(nt.Title, nt.Detail, nt.Error);
                 return true;
 
             case WM_APP_CLIPS when hwnd == _tray:
@@ -337,6 +448,8 @@ internal sealed unsafe class App
         KeyHook.Uninstall();
         _view.Hover = -1;
         _view.Clips = false;
+        _view.Query = false;
+        _view.QueryText = "";
         Shown.Reset();
         Hidden.Set();
         ScheduleTrim();
@@ -409,24 +522,88 @@ internal sealed unsafe class App
 
         var s = _slices[slice];
         if (BenchMode) { Close(); return; }   // the bench never launches anything
+        if (s.Def.Kind == SliceKind.Search) { EnterQuery(slice); return; }
         switch (s.Tool)
         {
-            case Tool.Clips:
+            case ToolKind.Clips:
                 EnterClips();
                 return;
-            case Tool.Screenshot:
+            case ToolKind.Screenshot:
                 Close();
                 _capture.Begin(CaptureMode.Screenshot);
                 return;
-            case Tool.ColorPicker:
+            case ToolKind.ColorPicker:
                 Close();
                 _capture.Begin(CaptureMode.ColorPicker);
                 return;
             default:
                 Close();
-                Actions.Launch(s);
+                _actions.Run(s.Def);
                 return;
         }
+    }
+
+    // ───────────────────────── search box ─────────────────────────
+
+    private int _querySlice = -1;
+
+    private void EnterQuery(int slice)
+    {
+        _querySlice = slice;
+        _view.Hover = slice;
+        _view.Query = true;
+        _view.QueryText = "";
+        _view.QueryEngine = SearchEngines.NameOf(_slices[slice].Def.SearchTemplate);
+        KeyHook.TextMode = true;
+        Renderer.Draw(_view);
+    }
+
+    private void ExitQuery()
+    {
+        _view.Query = false;
+        _view.QueryText = "";
+        KeyHook.TextMode = false;
+        Renderer.Draw(_view);
+    }
+
+    private void OnQueryKey(uint vk, uint scan)
+    {
+        bool ctrl = KeyHook.IsDown(VIRTUAL_KEY.VK_CONTROL), alt = KeyHook.IsDown(VIRTUAL_KEY.VK_MENU);
+        string q = _view.QueryText;
+        switch ((VIRTUAL_KEY)vk)
+        {
+            case VIRTUAL_KEY.VK_ESCAPE:
+                ExitQuery();
+                return;
+            case VIRTUAL_KEY.VK_RETURN:
+                if (q.Trim().Length == 0) return;
+                var slice = _slices[_querySlice].Def;
+                Close();
+                _actions.Search(slice, q);
+                return;
+            case VIRTUAL_KEY.VK_BACK:
+                if (q.Length == 0) return;
+                if (ctrl)
+                {
+                    // Ctrl+Backspace: delete the last word.
+                    string t = q.TrimEnd();
+                    int sp = t.LastIndexOf(' ');
+                    q = sp < 0 ? "" : t[..(sp + 1)];
+                }
+                else q = q[..^(char.IsLowSurrogate(q[^1]) && q.Length > 1 ? 2 : 1)];
+                break;
+            case VIRTUAL_KEY.VK_V when ctrl && !alt:
+                q += (ClipboardIO.GetText(_tray) ?? "").ReplaceLineEndings(" ");
+                break;
+            default:
+                if (ctrl && !alt) return;   // other shortcuts do nothing here (AltGr = Ctrl+Alt still types)
+                q += KeyHook.TextOf(vk, scan);
+                break;
+        }
+        if (q.Length > 500) q = q[..500];
+        if (q == _view.QueryText) return;
+        _view.QueryText = q;
+        Renderer.Draw(_view);
     }
 
     // ───────────────────────── clips (image history) ─────────────────────────
@@ -616,6 +793,14 @@ internal sealed unsafe class App
         PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_ADD, &nid);
     }
 
+    private void UpdateTrayTip()
+    {
+        var nid = TrayData();
+        nid.uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_TIP;
+        nid.szTip = _hotkeyOk ? $"Spoke · {ActiveHotkey}" : "Spoke";
+        PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_MODIFY, &nid);
+    }
+
     private NOTIFYICONDATAW TrayData() => new() { cbSize = (uint)sizeof(NOTIFYICONDATAW), hWnd = _tray, uID = 1 };
 
     private void Balloon(string title, string text)
@@ -646,6 +831,9 @@ internal sealed unsafe class App
         Append(menu, CmdClearClips, n > 0 ? $"Clear image history ({n})" : "Clear image history", enabled: n > 0);
         Append(menu, CmdPause, _paused ? "Resume" : "Pause (wheel and image history)");
         PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
+        Append(menu, CmdEditSettings, "Edit settings.json…");
+        Append(menu, CmdAutostart, "Start with Windows", check: Autostart.IsEnabled);
+        PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
         Append(menu, CmdQuit, "Quit Spoke");
         PInvoke.GetCursorPos(out var pt);
         PInvoke.SetForegroundWindow(_tray);   // required so the menu closes when clicking elsewhere
@@ -655,9 +843,10 @@ internal sealed unsafe class App
         if (cmd != 0) OnCommand(cmd);
     }
 
-    private static void Append(HMENU menu, int id, string text, bool enabled = true)
+    private static void Append(HMENU menu, int id, string text, bool enabled = true, bool check = false)
     {
-        fixed (char* t = text) PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_STRING | (enabled ? 0 : MENU_ITEM_FLAGS.MF_GRAYED), (nuint)id, t);
+        var flags = MENU_ITEM_FLAGS.MF_STRING | (enabled ? 0 : MENU_ITEM_FLAGS.MF_GRAYED) | (check ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
+        fixed (char* t = text) PInvoke.AppendMenu(menu, flags, (nuint)id, t);
     }
 
     private void OnCommand(int id)
@@ -672,11 +861,16 @@ internal sealed unsafe class App
                 ReleaseThumbs();
                 break;
             case CmdQuit: Quit(); break;
+            case CmdEditSettings:
+                _actions.Run(new Slice(SliceKind.App, "settings.json", "", null, Target: "notepad.exe", Args: "\"" + Settings.FilePath + "\""));
+                break;
+            case CmdAutostart:
+                if (!Autostart.Set(!Autostart.IsEnabled)) Notify("Couldn't change start-up", "Windows didn't allow the change.", true);
+                break;
             case >= CmdTheme0 when id < CmdTheme0 + Theme.All.Length:
                 var theme = Theme.All[id - CmdTheme0];
                 Renderer.SetTheme(theme);
-                _settings.Theme = theme.Name;
-                _settings.Save();
+                _settings.SaveValue("theme", theme.Name);
                 Open(Stopwatch.GetTimestamp());   // show it
                 break;
         }

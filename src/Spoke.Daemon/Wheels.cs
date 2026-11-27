@@ -1,31 +1,20 @@
+using Spoke.Core;
+using Windows.Win32.Graphics.Direct2D;
+
 namespace Spoke.Daemon;
 
-internal enum Tool { None, Screenshot, ColorPicker, Clips }
-
-/// <summary>One slice of the wheel. M1 replaces the hard-coded list with settings.json.</summary>
-internal sealed class SliceDef
+/// <summary>A slice as the daemon draws and runs it: the validated config plus its glyph and (for apps) icon.</summary>
+internal sealed unsafe class SliceDef
 {
-    public required string Label;
-    public required string Kind;      // "tool" | "app" | "web"
-    public string Target = "";        // exe name, path or URL (apps and web)
-    public required string Detail;    // second line in the hub
-    public required char Glyph;       // Segoe Fluent Icons code point
-    public Tool Tool = Tool.None;
-}
+    public required Slice Def;
+    public required char Glyph;
+    /// <summary>The app's own icon (premultiplied, GPU), loaded in the background; null until then or if none.</summary>
+    public ID2D1Bitmap1* Icon;
 
-internal static class Wheels
-{
-    public const string Name = "Spoke";
+    public string Label => Def.Label;
+    public string Detail => Def.Detail;
+    public ToolKind Tool => Def.Tool;
 
-    public static readonly SliceDef[] Main =
-    [
-        new() { Label = "Screenshot",   Kind = "tool", Tool = Tool.Screenshot,  Detail = "Region, window, screen", Glyph = '' },
-        new() { Label = "Color picker", Kind = "tool", Tool = Tool.ColorPicker, Detail = "Copy any pixel's colour", Glyph = '' },
-        new() { Label = "Clips",        Kind = "tool", Tool = Tool.Clips,       Detail = "Your copied images",    Glyph = '' },
-        new() { Label = "Terminal",     Kind = "app",  Target = "wt.exe",       Detail = "Windows Terminal",               Glyph = '' },
-        new() { Label = "Files",        Kind = "app",  Target = "explorer.exe", Detail = "File Explorer",                  Glyph = '' },
-        new() { Label = "Notepad",      Kind = "app",  Target = "notepad.exe",  Detail = "Quick notes",                        Glyph = '' },
-        new() { Label = "GitHub",       Kind = "web",  Target = "https://github.com", Detail = "github.com",               Glyph = '' },
-        new() { Label = "Settings",     Kind = "app",  Target = "ms-settings:", Detail = "Windows Settings",               Glyph = '' },
-    ];
+    public static SliceDef[] From(IReadOnlyList<Slice> slices) =>
+        [.. slices.Select(s => new SliceDef { Def = s, Glyph = Glyphs.For(s) })];
 }

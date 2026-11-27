@@ -64,6 +64,8 @@ Each feature has **done criteria**. A feature is done only when every criterion 
 | Basic settings window | Edit one wheel's 8 slices (type, target, label) and the hotkey. *(Replaced by the full editor in Phase 2.)* |
 | Wheel row | Visible but showing just one wheel. |
 
+*M1 note (2026-11-27): the basic settings window and the wheel row moved to Phase 2, where the full editor and multiple wheels replace them; M1 edits settings.json by hand (tray → Edit settings). Favicons and the search box's dead-key/IME input are also deferred.*
+
 ### Phase 2: Many wheels and the editor (≈2.5 weeks)
 | Feature | Done when |
 |---|---|

@@ -26,7 +26,7 @@ internal static unsafe class Program
             StayResponsive();
 
             int hi = Array.IndexOf(args, "--hotkey");
-            var app = new App(Wheels.Main, forceWarp: args.Contains("--warp"), hi >= 0 && hi + 1 < args.Length ? args[hi + 1] : null);
+            var app = new App(forceWarp: args.Contains("--warp"), hi >= 0 && hi + 1 < args.Length ? args[hi + 1] : null);
             var mem = Bench.Memory();
             Log.Write($"Started in {Log.Ms(t0, Stopwatch.GetTimestamp()):F1} ms (Main → tray + hotkey ready). " +
                       $"Renderer {(app.Gfx.UsingWarp ? "WARP" : "GPU")}. WS {mem.ws / 1048576.0:F1} MB, private {mem.priv / 1048576.0:F1} MB");

@@ -100,8 +100,10 @@ internal static unsafe class ClipboardIO
         return true;
     }
 
-    public static bool SetText(HWND owner, string text)
+    /// <summary>Puts text on the clipboard. <paramref name="markOwn"/>: a transient Spoke write, kept out of Win+V history.</summary>
+    public static bool SetText(HWND owner, string text, bool markOwn = false)
     {
+        EnsureFormats();
         if (!OpenClipboard(owner)) return false;
         try
         {
@@ -109,12 +111,79 @@ internal static unsafe class ClipboardIO
             var bytes = new byte[(text.Length + 1) * 2];
             System.Text.Encoding.Unicode.GetBytes(text, bytes);
             Put(CF_UNICODETEXT, bytes);
+            if (markOwn) Put(_canInclude, BitConverter.GetBytes(0u));
         }
         finally
         {
             PInvoke.CloseClipboard();
         }
+        if (markOwn) OwnSequence = PInvoke.GetClipboardSequenceNumber();
         return true;
+    }
+
+    /// <summary>The clipboard's text, or null if it holds none (for the {clipboard} token).</summary>
+    public static string? GetText(HWND owner)
+    {
+        if (!PInvoke.IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(owner)) return null;
+        try
+        {
+            var bytes = Copy(CF_UNICODETEXT);
+            if (bytes == null) return null;
+            string s = System.Text.Encoding.Unicode.GetString(bytes);
+            int nul = s.IndexOf('\0');
+            return nul >= 0 ? s[..nul] : s;
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
+    // Formats whose data is a GDI/metafile handle, not memory; they can't be copied byte-for-byte (Windows
+    // re-synthesises CF_BITMAP and friends from CF_DIB anyway).
+    private static readonly HashSet<uint> HandleFormats = [2 /* BITMAP */, 3 /* METAFILEPICT */, 9 /* PALETTE */, 14 /* ENHMETAFILE */, 0x80, 0x82, 0x83, 0x8E];
+
+    /// <summary>
+    /// Copies every memory-backed format off the clipboard (up to <paramref name="maxBytes"/> in total) so a
+    /// temporary paste can put the user's clipboard back afterwards. Null if the clipboard couldn't be read.
+    /// </summary>
+    public static List<(uint Format, byte[] Data)>? Snapshot(HWND owner, long maxBytes = 64L << 20)
+    {
+        if (!OpenClipboard(owner)) return null;
+        var list = new List<(uint, byte[])>();
+        try
+        {
+            long total = 0;
+            for (uint f = PInvoke.EnumClipboardFormats(0); f != 0; f = PInvoke.EnumClipboardFormats(f))
+            {
+                if (HandleFormats.Contains(f)) continue;
+                var data = Copy(f);
+                if (data == null) continue;
+                total += data.Length;
+                if (total > maxBytes) return null;   // too big to hold on to: better not to touch it at all
+                list.Add((f, data));
+            }
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+        return list;
+    }
+
+    public static void Restore(HWND owner, List<(uint Format, byte[] Data)> snapshot)
+    {
+        if (!OpenClipboard(owner)) return;
+        try
+        {
+            PInvoke.EmptyClipboard();
+            foreach (var (f, d) in snapshot) Put(f, d);
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+        OwnSequence = PInvoke.GetClipboardSequenceNumber();   // not a new copy: the image watcher ignores it
     }
 
     /// <summary>Another app can hold the clipboard for a moment; retry briefly.</summary>

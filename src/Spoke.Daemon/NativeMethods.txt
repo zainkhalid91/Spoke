@@ -189,3 +189,18 @@ CryptUnprotectData
 LocalFree
 // Tray menu
 CheckMenuRadioItem
+// M1: text input, icons, clipboard snapshot, autostart
+ToUnicodeEx
+GetKeyboardLayout
+GetKeyState
+SHCreateItemFromParsingName
+IShellItemImageFactory
+SIIGBF
+GetDIBits
+GetObject
+BITMAP
+SearchPath
+EnumClipboardFormats
+SEE_MASK_NOASYNC
+BITMAPINFO
+CoUninitialize

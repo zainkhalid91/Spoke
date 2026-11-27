@@ -18,7 +18,9 @@ namespace Spoke.Daemon;
 internal sealed unsafe class Toast
 {
     public const nuint TimerId = 21;
-    private const float W = 340, H = 66, Margin = 18;   // DIPs (card + shadow margin)
+    private const float W = 360, Margin = 18;   // DIPs (card + shadow margin)
+    private float H = 66;                      // 66 for image/colour cards, taller for wrapped notices
+    private IDWriteTextFormat* _fmtSubWrap;
 
     public readonly HWND Hwnd;
     private readonly Gfx _g;
@@ -39,14 +41,25 @@ internal sealed unsafe class Toast
         _fmtTitle = g.Format("Segoe UI Variable Text", 13f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING);
         _fmtSub = g.Format("Segoe UI Variable Text", 11f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING);
         _fmtGlyph = g.Format(g.IconFont, 14f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
+        _fmtSubWrap = g.Format("Segoe UI Variable Text", 11f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING);
+        _fmtSubWrap->SetWordWrapping(DWRITE_WORD_WRAPPING.DWRITE_WORD_WRAPPING_WRAP);
+        _fmtSubWrap->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT.DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
     }
 
     public void ShowColor(Color c, string title, string sub) => Show(title, sub, swatch: c, image: null);
 
     public void ShowImage(Pixels thumbPremultiplied, string title, string sub) => Show(title, sub, swatch: null, image: thumbPremultiplied);
 
-    private void Show(string title, string sub, Color? swatch, Pixels? image)
+    /// <summary>A text notice: a check for confirmations, a warning for problems (shown longer).</summary>
+    public void ShowMessage(string title, string sub, bool error) => Show(title, sub, swatch: null, image: null, message: true, error: error);
+
+    private bool _message, _error;
+
+    private void Show(string title, string sub, Color? swatch, Pixels? image, bool message = false, bool error = false)
     {
+        _message = message;
+        _error = error;
+        H = message ? 92 : 66;
         ReleaseImage();
         if (image != null)
         {
@@ -71,7 +84,7 @@ internal sealed unsafe class Toast
         _surface.AnimateIn(pw / 2f, ph / 2f, 160);
         _g.DComp->Commit();
         PInvoke.SetWindowPos(Hwnd, HWND.HWND_TOPMOST, x, y, pw, ph, SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_SHOWWINDOW);
-        PInvoke.SetTimer(Hwnd, TimerId, 2400, null);
+        PInvoke.SetTimer(Hwnd, TimerId, error ? 6000u : 2400u, null);
     }
 
     private void Draw(string title, string sub, Color? swatch)
@@ -84,7 +97,19 @@ internal sealed unsafe class Toast
         _g.FillRound(0, 0, W, H, 16, bg);
         _g.StrokeRound(0.5f, 0.5f, W - 0.5f, H - 0.5f, 16, t.Light ? C(0x000000, 0.08f) : C(0xFFFFFF, 0.10f), 1);
 
-        const float pad = 11, side = H - pad * 2;
+        const float pad = 11; float side = H - pad * 2;
+        if (_message)
+        {
+            // Text notice: a round badge on the left, text across the rest of the card.
+            var tone = _error ? C(0xFF6B6B) : t.Hue(3);
+            _g.FillCircle(pad + 19, 30, 17, WithAlpha(tone, 0.16f));
+            _g.Text(_error ? "" : "", _fmtGlyph, pad + 19, 30, 30, 30, tone);
+            float mx = pad + 38 + 12, mw = W - mx - 16;
+            _g.Text(title, _fmtTitle, mx + mw / 2, 25, mw, 18, t.Text);
+            _g.Text(sub, _fmtSubWrap, mx + mw / 2, 36 + 22, mw, 44, t.TextDim);   // up to three lines
+            _surface.End();
+            return;
+        }
         if (_imageBrush != null)
         {
             // Image thumbnail, centre-cropped into a rounded square.

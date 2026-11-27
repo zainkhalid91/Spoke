@@ -24,8 +24,12 @@ internal sealed class WheelView
 {
     public int Hover = -1;
     public bool Clips;
-    public ClipThumb[] Thumbs = new ClipThumb[8];
+    public ClipThumb[] Thumbs = new ClipThumb[Spoke.Core.ConfigLoader.MaxSlices];
     public int ClipCount, Page, Pages;
+    /// <summary>Search box mode: the hovered search slice's query being typed.</summary>
+    public bool Query;
+    public string QueryText = "";
+    public string QueryEngine = "";
 }
 
 /// <summary>
@@ -37,13 +41,17 @@ internal sealed unsafe class WheelRenderer
 {
     public const float Extent = 216f;   // half the drawn square: ring + hover lift + shadow
     public const float Lift = 9f;
-    public readonly WheelLayout Layout;
+    public WheelLayout Layout { get; private set; }
+    private const int MaxSlices = Spoke.Core.ConfigLoader.MaxSlices;
+    /// <summary>Shown in the hub when nothing is hovered.</summary>
+    public string WheelName = "Spoke";
 
     private readonly Gfx _g;
     private readonly Surface _surface;
-    private readonly SliceDef[] _slices;
-    private readonly string[] _numbers;
+    private SliceDef[] _slices = [];
+    private readonly string[] _numbers = new string[MaxSlices];
 
+    private IDWriteTextFormat* _fmtQuery, _fmtQueryHint;
     private IDWriteTextFormat* _fmtLabel, _fmtNum, _fmtGlyph, _fmtGlyphHub, _fmtHub, _fmtHubSub, _fmtPill;
     private ID2D1PathGeometry** _sliceGeo;
     private ID2D1PathGeometry** _edgeGeo;
@@ -61,7 +69,7 @@ internal sealed unsafe class WheelRenderer
     private ID2D1BitmapBrush1* _cacheUnderBrush;
     private uint _cacheDpi;
     private Theme? _cacheTheme;
-    private readonly string[] _glyphs;
+    private readonly string[] _glyphs = new string[MaxSlices];
 
     // Draw-time stats for the bench report.
     public long DrawCount;
@@ -74,11 +82,7 @@ internal sealed unsafe class WheelRenderer
     public WheelRenderer(Gfx g, HWND hwnd, SliceDef[] slices)
     {
         _g = g;
-        _slices = slices;
-        Layout = new WheelLayout(slices.Length, hubRadius: 60f, innerRadius: 76f, outerRadius: 172f, gap: 0.03f);
-        _numbers = new string[slices.Length];
-        for (int i = 0; i < slices.Length; i++) _numbers[i] = i < 9 ? (i + 1).ToString() : "";
-        _glyphs = Array.ConvertAll(slices, x => x.Glyph.ToString());
+        for (int i = 0; i < MaxSlices; i++) _numbers[i] = i < 9 ? (i + 1).ToString() : "";
 
         const string ui = "Segoe UI Variable Text", mono = "Cascadia Mono";
         _fmtLabel = g.Format(ui, 11.5f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD);
@@ -89,19 +93,14 @@ internal sealed unsafe class WheelRenderer
         _fmtHubSub = g.Format(ui, 9f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
         _fmtPill = g.Format(mono, 8.5f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
 
-        int n = slices.Length;
-        _sliceGeo = (ID2D1PathGeometry**)NativeMemory.AllocZeroed((nuint)(n * sizeof(nint)));
-        _edgeGeo = (ID2D1PathGeometry**)NativeMemory.AllocZeroed((nuint)(n * sizeof(nint)));
-        _sliceBounds = (D2D_RECT_F*)NativeMemory.AllocZeroed((nuint)(n * sizeof(D2D_RECT_F)));
-        for (int i = 0; i < n; i++)
-        {
-            var (a1, a2) = Layout.SliceAngles(i);
-            _sliceGeo[i] = g.Annulus(Layout.InnerRadius, Layout.OuterRadius, a1, a2);
-            _edgeGeo[i] = g.Annulus(Layout.InnerRadius, Layout.InnerRadius + 3.5f, a1, a2);
-            D2D_RECT_F b;
-            ((ID2D1Geometry*)_sliceGeo[i])->GetBounds(null, &b);
-            _sliceBounds[i] = b;
-        }
+        _fmtQuery = g.Format(ui, 15f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING);
+        _fmtQueryHint = g.Format(ui, 10f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
+
+        _sliceGeo = (ID2D1PathGeometry**)NativeMemory.AllocZeroed((nuint)(MaxSlices * sizeof(nint)));
+        _edgeGeo = (ID2D1PathGeometry**)NativeMemory.AllocZeroed((nuint)(MaxSlices * sizeof(nint)));
+        _sliceBounds = (D2D_RECT_F*)NativeMemory.AllocZeroed((nuint)(MaxSlices * sizeof(D2D_RECT_F)));
+        _glow = (ID2D1RadialGradientBrush**)NativeMemory.AllocZeroed((nuint)(MaxSlices * sizeof(nint)));
+        SetSlices(slices);
         _previewGeo = g.Ellipse(0, 0, Layout.HubRadius + 6);
 
         _surface = new Surface(g, hwnd);
@@ -109,12 +108,38 @@ internal sealed unsafe class WheelRenderer
         SetDpi(96);
     }
 
+    /// <summary>Replaces the wheel's slices (settings.json reloaded): new geometry when the count changes.</summary>
+    public void SetSlices(SliceDef[] slices)
+    {
+        int n = slices.Length;
+        if (n != _slices.Length)
+        {
+            Layout = new WheelLayout(n, hubRadius: 60f, innerRadius: 76f, outerRadius: 172f, gap: n > 8 ? 0.022f : 0.03f);
+            for (int i = 0; i < MaxSlices; i++)
+            {
+                Release(_sliceGeo[i]); _sliceGeo[i] = null;
+                Release(_edgeGeo[i]); _edgeGeo[i] = null;
+                if (i >= n) continue;
+                var (a1, a2) = Layout.SliceAngles(i);
+                _sliceGeo[i] = _g.Annulus(Layout.InnerRadius, Layout.OuterRadius, a1, a2);
+                _edgeGeo[i] = _g.Annulus(Layout.InnerRadius, Layout.InnerRadius + 3.5f, a1, a2);
+                D2D_RECT_F b;
+                ((ID2D1Geometry*)_sliceGeo[i])->GetBounds(null, &b);
+                _sliceBounds[i] = b;
+            }
+        }
+        _slices = slices;
+        for (int i = 0; i < n; i++) _glyphs[i] = slices[i].Glyph.ToString();
+        ReleaseCache();
+    }
+
+    public SliceDef[] Slices => _slices;
+
     public void SetTheme(Theme t)
     {
         Theme = t;
         Release(_ringBrush); Release(_hubBrush); Release(_shadowBrush); Release(_highlight);
-        if (_glow == null) _glow = (ID2D1RadialGradientBrush**)NativeMemory.AllocZeroed((nuint)(_slices.Length * sizeof(nint)));
-        for (int i = 0; i < _slices.Length; i++)
+        for (int i = 0; i < MaxSlices; i++)
         {
             Release(_glow[i]);
             var h = t.Hue(i);
@@ -200,6 +225,7 @@ internal sealed unsafe class WheelRenderer
 
         if (v.Clips) DrawClipsHub(v, accent);
         else DrawMainHub(hover, accent);
+        if (v.Query) DrawQuery(v, accent);
 
         _surface.End();
 
@@ -281,7 +307,8 @@ internal sealed unsafe class WheelRenderer
             // Colour tile + glyph, then the label.
             _g.FillRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(hue, hov ? t.TileAlphaHover : t.TileAlpha));
             if (hov) _g.StrokeRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(hue, 0.55f), 1f);
-            _g.Text(_glyphs[i], _fmtGlyph, ix, iy - 11, 32, 32, hue);
+            if (_slices[i].Icon != null) DrawIcon(_slices[i].Icon, ix, iy - 11, 22);
+            else _g.Text(_glyphs[i], _fmtGlyph, ix, iy - 11, 32, 32, hue);
             _g.Text(_slices[i].Label, _fmtLabel, ix, iy + 18, 110, 16, hov ? t.Text : t.TextDim);
         }
 
@@ -354,14 +381,15 @@ internal sealed unsafe class WheelRenderer
         if (hover >= 0)
         {
             var s = _slices[hover];
-            _g.Text(s.Glyph.ToString(), _fmtGlyphHub, 0, -24, 40, 26, accent);
+            if (s.Icon != null) DrawIcon(s.Icon, 0, -24, 24);
+            else _g.Text(_glyphs[hover], _fmtGlyphHub, 0, -24, 40, 26, accent);
             _g.Text(s.Label, _fmtHub, 0, 2, 112, 20, t.Text);
             _g.Text(s.Detail, _fmtHubSub, 0, 20, 112, 13, t.TextFaint);
         }
         else
         {
             _g.FillCircle(0, -22, 4f, accent);
-            _g.Text(Wheels.Name, _fmtHub, 0, 0, 112, 20, t.Text);
+            _g.Text(WheelName, _fmtHub, 0, 0, 112, 20, t.Text);
             _g.Text("1–8 · arrows · Esc", _fmtHubSub, 0, 19, 112, 13, t.TextFaint);
         }
     }
@@ -391,6 +419,49 @@ internal sealed unsafe class WheelRenderer
         _g.Text("Clips", _fmtHub, 0, 2, 112, 20, t.Text);
         string sub = v.Pages > 1 ? $"{v.ClipCount} images · {v.Page + 1}/{v.Pages}" : $"{v.ClipCount} image{(v.ClipCount == 1 ? "" : "s")}";
         _g.Text(sub, _fmtHubSub, 0, 20, 118, 13, t.TextFaint);
+    }
+
+    private void DrawIcon(ID2D1Bitmap1* icon, float cx, float cy, float size)
+    {
+        var dest = new D2D_RECT_F { left = cx - size / 2, top = cy - size / 2, right = cx + size / 2, bottom = cy + size / 2 };
+        _g.Dc->DrawBitmap((ID2D1Bitmap*)icon, &dest, 1f, D2D1_INTERPOLATION_MODE.D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, null, null);
+    }
+
+    /// <summary>
+    /// The search box: the wheel dims and a bar across its middle shows what's being typed. Keys arrive
+    /// through the keyboard hook, so the app underneath keeps focus the whole time.
+    /// </summary>
+    private void DrawQuery(WheelView v, D2D1_COLOR_F accent)
+    {
+        var t = Theme;
+        _g.FillCircle(0, 0, Layout.OuterRadius + 2, t.Light ? C(0xFFFFFF, 0.55f) : C(0x000000, 0.50f));
+        const float w = 300, h = 46, r = 23;
+        _g.FillRound(-w / 2 - 1, -h / 2 + 3, w / 2 + 1, h / 2 + 5, r + 1, C(0x000000, t.Light ? 0.10f : 0.35f));
+        _g.FillRound(-w / 2, -h / 2, w / 2, h / 2, r, t.Light ? C(0xFFFFFF) : C(0x10131F));
+        _g.StrokeRound(-w / 2 + 0.5f, -h / 2 + 0.5f, w / 2 - 0.5f, h / 2 - 0.5f, r, WithAlpha(accent, 0.75f), 1.2f);
+        float gx = -w / 2 + 24;
+        _g.FillCircle(gx, 0, 14, WithAlpha(accent, 0.18f));
+        _g.Text("", _fmtGlyph, gx, 0, 28, 28, accent);
+
+        float tx = gx + 22, tw = w / 2 - 18 - tx;
+        if (v.QueryText.Length == 0)
+        {
+            _g.Text($"Search {v.QueryEngine}", _fmtQuery, tx + tw / 2, 0, tw, 24, t.TextFaint);
+            _g.Line(tx, -9, tx, 9, accent, 1.5f);
+        }
+        else
+        {
+            // Show the end of long queries, where the caret is.
+            string text = v.QueryText;
+            while (text.Length > 1 && _g.Measure(text, _fmtQuery) > tw - 4) text = text[1..];
+            if (text.Length < v.QueryText.Length) text = "…" + text[1..];
+            float width = _g.Measure(text, _fmtQuery);
+            _g.Text(text, _fmtQuery, tx + tw / 2, 0, tw, 24, t.Text);
+            _g.Line(tx + width + 1.5f, -9, tx + width + 1.5f, 9, accent, 1.5f);
+        }
+        float hy = h / 2 + 18;
+        _g.FillRound(-86, hy - 10, 86, hy + 10, 10, t.Light ? C(0xFFFFFF, 0.9f) : C(0x000000, 0.55f));
+        _g.Text("Enter to search · Esc to go back", _fmtQueryHint, 0, hy, 172, 16, t.Light ? t.TextDim : C(0xFFFFFF, 0.8f));
     }
 
     /// <summary>Fills a geometry with an image scaled to cover its bounds (centre crop).</summary>
