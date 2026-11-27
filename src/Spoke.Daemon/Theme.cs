@@ -14,6 +14,10 @@ internal sealed class Theme
     public required D2D1_COLOR_F[] Hues;
 
     public D2D1_COLOR_F Hue(int i) => Hues[((i % Hues.Length) + Hues.Length) % Hues.Length];
+    /// <summary>One highlight colour (Windows accent or custom) for glows, edges and the needle; null: each slice's hue.</summary>
+    public D2D1_COLOR_F? Highlight { get; init; }
+    /// <summary>The colour slice <paramref name="i"/> lights up in. Icons keep <see cref="Hue"/> either way.</summary>
+    public D2D1_COLOR_F Glow(int i) => Highlight ?? Hue(i);
 
     private static D2D1_COLOR_F[] Palette(params uint[] rgb) => rgb.Select(c => C(c)).ToArray();
 
@@ -77,7 +81,7 @@ internal sealed class Theme
 
     public static readonly Theme[] All = [Aurora, Ember, Paper, Graphite, Onyx];
 
-    /// <summary>The same theme with every slice in one colour (the Windows accent or a custom one).</summary>
+    /// <summary>The same theme lit in one colour (the Windows accent or a custom one). Icons stay in the theme's colours.</summary>
     public Theme WithAccent(uint rgb)
     {
         var c = C(rgb);
@@ -89,7 +93,8 @@ internal sealed class Theme
             RingInner = RingInner, RingOuter = RingOuter, Stroke = Stroke, HubTop = HubTop, HubBottom = HubBottom, HubStroke = HubStroke,
             Text = Text, TextDim = TextDim, TextFaint = TextFaint,
             ShadowAlpha = ShadowAlpha, HighlightAlpha = HighlightAlpha, TileAlpha = TileAlpha, TileAlphaHover = TileAlphaHover, GlowAlpha = GlowAlpha,
-            Hues = [c],
+            Hues = Hues,
+            Highlight = c,
         };
     }
 

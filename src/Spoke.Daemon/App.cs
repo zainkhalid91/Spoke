@@ -32,9 +32,11 @@ internal sealed unsafe partial class App
     public const uint WM_APP_PIPE = PInvoke.WM_APP + 9;    // a request from Spoke Settings
 
     private const int HotkeyId = 1;
+    /// <summary>Hotkey ids for wheels 2…n are this plus the wheel's index.</summary>
+    private const int WheelHotkeyBase = 10;
     private const nuint TrimTimerId = 7, ClipTimerId = 8, ConfigTimerId = 9;
     private const uint TrimAfterMs = 60_000;   // give memory back to Windows a minute after the wheel closes
-    private const int CmdOpen = 100, CmdPause = 101, CmdQuit = 102, CmdClips = 103, CmdClearClips = 104, CmdEditSettings = 105, CmdAutostart = 106, CmdSettings = 107, CmdTheme0 = 110, CmdThemeAuto = 115, CmdAccentTheme = 120, CmdAccentWindows = 121, CmdSize0 = 130;
+    private const int CmdOpen = 100, CmdPause = 101, CmdQuit = 102, CmdClips = 103, CmdClearClips = 104, CmdEditSettings = 105, CmdAutostart = 106, CmdSettings = 107, CmdTheme0 = 110, CmdThemeAuto = 115, CmdAccentTheme = 120, CmdAccentWindows = 121, CmdSize0 = 130, CmdWheel0 = 140;
     private const uint WM_DWMCOLORIZATIONCOLORCHANGED = 0x0320;
 
     public HWND Overlay { get; private set; }
@@ -47,6 +49,11 @@ internal sealed unsafe partial class App
     private readonly CaptureOverlay _capture;
     private readonly Toast _toast;
     private SliceDef[] _slices => Renderer.Slices;
+    /// <summary>Every configured wheel, and the one showing (or shown last).</summary>
+    private List<WheelSet> _wheelSets = [];
+    private int _wheel;
+    /// <summary>Registered hotkeys of wheels 2…n: hotkey id → wheel index.</summary>
+    private readonly Dictionary<int, int> _wheelHotkeys = [];
     private WheelLayout _layout => Renderer.Layout;
     private readonly Settings _settings;
     private PipeServer? _pipe;
@@ -90,11 +97,11 @@ internal sealed unsafe partial class App
 
     private static readonly VIRTUAL_KEY[] WheelKeys =
     [
-        VIRTUAL_KEY.VK_ESCAPE, VIRTUAL_KEY.VK_RETURN, VIRTUAL_KEY.VK_LEFT, VIRTUAL_KEY.VK_RIGHT, VIRTUAL_KEY.VK_UP, VIRTUAL_KEY.VK_DOWN, .. KeyHook.Digits,
+        VIRTUAL_KEY.VK_ESCAPE, VIRTUAL_KEY.VK_RETURN, VIRTUAL_KEY.VK_LEFT, VIRTUAL_KEY.VK_RIGHT, VIRTUAL_KEY.VK_UP, VIRTUAL_KEY.VK_DOWN, VIRTUAL_KEY.VK_TAB, .. KeyHook.Digits,
     ];
     private static readonly VIRTUAL_KEY[] ClipsKeys =
     [
-        .. WheelKeys, VIRTUAL_KEY.VK_BACK, VIRTUAL_KEY.VK_DELETE, VIRTUAL_KEY.VK_PRIOR, VIRTUAL_KEY.VK_NEXT, VIRTUAL_KEY.VK_TAB,
+        .. WheelKeys, VIRTUAL_KEY.VK_BACK, VIRTUAL_KEY.VK_DELETE, VIRTUAL_KEY.VK_PRIOR, VIRTUAL_KEY.VK_NEXT,
     ];
 
     public App(bool forceWarp, string? preferredHotkey = null)
@@ -119,8 +126,9 @@ internal sealed unsafe partial class App
         _tray = Create("SpokeTray", hinst, WINDOW_EX_STYLE.WS_EX_TOOLWINDOW, WINDOW_STYLE.WS_POPUP);
 
         Gfx = new Gfx(forceWarp);
-        Renderer = new WheelRenderer(Gfx, Overlay, SliceDef.From(cfg.Slices));
-        Renderer.WheelName = cfg.WheelName;
+        _wheelSets = BuildWheels(cfg);
+        Renderer = new WheelRenderer(Gfx, Overlay, _wheelSets[0].Slices);
+        SelectWheel(0);
         ApplyAppearance(cfg.Appearance);
         _actions = new Actions(_tray, Notify);
         _icons = new IconLoader(_tray);
@@ -141,7 +149,8 @@ internal sealed unsafe partial class App
         PInvoke.AddClipboardFormatListener(_tray);
 
         fixed (char* tb = "TaskbarCreated") _taskbarCreated = PInvoke.RegisterWindowMessage(tb);
-        var notice = RegisterHotkey(preferredHotkey ?? cfg.Config?.Hotkey);
+        var notice = RegisterHotkey(preferredHotkey ?? _wheelSets[0].Hotkey);
+        notice ??= RegisterWheelHotkeys();
         AddTrayIcon();
         if (notice is { } n) Balloon(n.Title, n.Text);
         if (configErrors.Count > 0) ShowConfigErrors(configErrors);
@@ -168,10 +177,12 @@ internal sealed unsafe partial class App
         var cfg = _settings.Current;
         if (IsOpen) Close();
         ReleaseIcons();
-        Renderer.SetSlices(SliceDef.From(cfg.Slices));
-        Renderer.WheelName = cfg.WheelName;
+        string showing = _wheelSets.Count > _wheel ? _wheelSets[_wheel].Name : "";
+        _wheelSets = BuildWheels(cfg);
+        SelectWheel(Math.Max(0, _wheelSets.FindIndex(w => w.Name == showing)));
         ApplyAppearance(cfg.Appearance);
-        string? want = _hotkeyOverride ?? cfg.Config?.Hotkey;
+        if (RegisterWheelHotkeys() is { } wn && !quiet) Notify(wn.Title, wn.Text, true);
+        string? want = _hotkeyOverride ?? _wheelSets[0].Hotkey;
         if (want != null && Hotkey.TryParse(want, out var hk) && (!_hotkeyOk || hk != ActiveHotkey))
         {
             if (_hotkeyOk) PInvoke.UnregisterHotKey(Overlay, HotkeyId);
@@ -180,8 +191,56 @@ internal sealed unsafe partial class App
             UpdateTrayTip();
         }
         LoadIcons();
-        Log.Write($"settings.json reloaded: {cfg.Slices.Count} slices");
-        if (!quiet) Notify("Settings updated", $"{cfg.WheelName} · {cfg.Slices.Count} slices · {(_hotkeyOk ? ActiveHotkey.ToString() : "no shortcut")}", false);
+        Log.Write($"settings.json reloaded: {_wheelSets.Count} wheel(s), {cfg.Slices.Count} slices on the first");
+        if (!quiet) Notify("Settings updated", _wheelSets.Count > 1
+            ? $"{_wheelSets.Count} wheels · {(_hotkeyOk ? ActiveHotkey.ToString() : "no shortcut")} · Tab switches"
+            : $"{cfg.WheelName} · {cfg.Slices.Count} slices · {(_hotkeyOk ? ActiveHotkey.ToString() : "no shortcut")}", false);
+    }
+
+    private static List<WheelSet> BuildWheels(ConfigResult cfg) =>
+        [.. cfg.Wheels.Select(w => new WheelSet(w.Name, w.Hotkey, SliceDef.From(w.Slices)))];
+
+    /// <summary>Makes wheel <paramref name="w"/> the one the renderer shows (no drawing).</summary>
+    private void SelectWheel(int w)
+    {
+        _wheel = w;
+        Renderer.SetSlices(_wheelSets[w].Slices);
+        Renderer.WheelName = _wheelSets[w].Name;
+        Renderer.SetRow([.. _wheelSets.Select(s => s.Name)], w);
+    }
+
+    /// <summary>Tab, a pill or a wheel's own shortcut while the wheel is open: swap wheels in place.</summary>
+    private void SwitchWheel(int w)
+    {
+        if (w == _wheel || w < 0 || w >= _wheelSets.Count) return;
+        long t0 = Stopwatch.GetTimestamp();
+        if (_view.Query) { _view.Query = false; _view.QueryText = ""; KeyHook.TextMode = false; }
+        ResetSubs();
+        SelectWheel(w);
+        _view.Hover = -1;
+        _view.RowHover = -1;
+        Renderer.Draw(_view);
+        Renderer.Commit();
+        Log.Write($"Wheel: {_wheelSets[w].Name} in {Log.Ms(t0, Stopwatch.GetTimestamp()):0.0} ms");
+    }
+
+    /// <summary>Shortcuts of wheels 2…n. Returns a notice naming any that another app holds.</summary>
+    private (string Title, string Text)? RegisterWheelHotkeys()
+    {
+        foreach (int id in _wheelHotkeys.Keys) PInvoke.UnregisterHotKey(Overlay, id);
+        _wheelHotkeys.Clear();
+        var taken = new List<string>();
+        for (int i = 1; i < _wheelSets.Count; i++)
+        {
+            if (_wheelSets[i].Hotkey is not { } text || !Hotkey.TryParse(text, out var hk)) continue;
+            int id = WheelHotkeyBase + i;
+            if (PInvoke.RegisterHotKey(Overlay, id, (HOT_KEY_MODIFIERS)(uint)hk.Modifiers | HOT_KEY_MODIFIERS.MOD_NOREPEAT, hk.VirtualKey))
+                _wheelHotkeys[id] = i;
+            else taken.Add($"{hk} ({_wheelSets[i].Name})");
+        }
+        if (taken.Count == 0) return null;
+        Log.Write($"Wheel shortcut(s) used by another app: {string.Join(", ", taken)}");
+        return ("Shortcut in use", $"{string.Join(", ", taken)} is used by another app. Open that wheel with Tab from another wheel.");
     }
 
     /// <summary>
@@ -228,20 +287,23 @@ internal sealed unsafe partial class App
             errors[0] + " Spoke keeps using your last working settings.", true);
     }
 
+    /// <summary>Every slice whose icon may load, in the order <see cref="IconLoader"/> results refer to.</summary>
+    private SliceDef[] _iconSlices = [];
+
     private void LoadIcons()
     {
         int gen = ++_configGeneration;
         var apps = new List<(int, string)>();
-        var root = RootSlices;
-        for (int i = 0; i < root.Length; i++)
-            if (root[i].Def.Kind == SliceKind.App && root[i].Def.Icon == null) apps.Add((i, root[i].Def.Target));
+        _iconSlices = [.. SliceDef.Flatten(_wheelSets.SelectMany(w => w.Slices))];
+        for (int i = 0; i < _iconSlices.Length; i++)
+            if (_iconSlices[i].Def.Kind == SliceKind.App && _iconSlices[i].Def.Icon == null) apps.Add((i, _iconSlices[i].Def.Target));
         _icons.Load(gen, apps);
     }
 
     private void OnIconsReady()
     {
         bool any = false;
-        var root = RootSlices;
+        var root = _iconSlices;
         while (_icons.Results.TryDequeue(out var r))
         {
             if (r.Generation != _configGeneration || r.Index >= root.Length) continue;
@@ -257,7 +319,7 @@ internal sealed unsafe partial class App
 
     private void ReleaseIcons()
     {
-        foreach (var s in RootSlices) { Gfx.Release(s.Icon); s.Icon = null; }
+        foreach (var s in SliceDef.Flatten(_wheelSets.SelectMany(w => w.Slices))) { Gfx.Release(s.Icon); s.Icon = null; }
     }
 
     /// <summary>Thread-safe: queue a toast for the UI thread.</summary>
@@ -332,11 +394,15 @@ internal sealed unsafe partial class App
                 result = (LRESULT)(nint)PInvoke.MA_NOACTIVATE;   // clicking the wheel never takes focus
                 return true;
 
-            case PInvoke.WM_HOTKEY when (int)wParam.Value == HotkeyId:
-                if (IsOpen) Close();
+            case PInvoke.WM_HOTKEY when (int)wParam.Value == HotkeyId || _wheelHotkeys.ContainsKey((int)wParam.Value):
+            {
+                int w = (int)wParam.Value == HotkeyId ? 0 : _wheelHotkeys[(int)wParam.Value];
+                if (IsOpen && (w == _wheel || _view.Clips)) Close();
+                else if (IsOpen) SwitchWheel(w);
                 else if (_capture!.IsOpen) _capture.End();
-                else Open(Stopwatch.GetTimestamp());
+                else Open(Stopwatch.GetTimestamp(), wheel: w);
                 return true;
+            }
 
             case PInvoke.WM_MOUSEMOVE when hwnd == Overlay && IsOpen && _view.Query:
                 return true;   // hover is frozen while typing
@@ -365,7 +431,21 @@ internal sealed unsafe partial class App
             }
 
             case PInvoke.WM_MOUSEMOVE when hwnd == Overlay && IsOpen:
+            {
+                int row = RowHitClient(lParam);
+                if (row != _view.RowHover)
+                {
+                    _view.RowHover = row;
+                    _view.Hover = row >= 0 ? -1 : HitTestClient(lParam);
+                    Renderer.Draw(_view);
+                    return true;
+                }
                 SetHover(HitTestClient(lParam));
+                return true;
+            }
+
+            case PInvoke.WM_LBUTTONUP when hwnd == Overlay && IsOpen && RowHitClient(lParam) is >= 0 and var pill:
+                SwitchWheel(pill);
                 return true;
 
             case PInvoke.WM_LBUTTONUP when hwnd == Overlay && IsOpen:
@@ -466,9 +546,10 @@ internal sealed unsafe partial class App
 
     // ───────────────────────── open / close ─────────────────────────
 
-    public void Open(long hotkeyTicks, bool clips = false)
+    public void Open(long hotkeyTicks, bool clips = false, int wheel = -1)
     {
         if (_paused) return;
+        if (wheel >= 0 && wheel != _wheel && wheel < _wheelSets.Count) SelectWheel(wheel);
         LastHotkeyTicks = hotkeyTicks;
         PInvoke.KillTimer(_tray, TrimTimerId);
 
@@ -483,6 +564,7 @@ internal sealed unsafe partial class App
 
         int extentPx = Renderer.PixelSize / 2;
         float reach = UseRing ? RingLayout.Reach(_layout.OuterRadius) : _layout.OuterRadius + WheelRenderer.Lift;
+        if (Renderer.HasRow) reach = MathF.Max(reach, Renderer.RowBottom);
         int ringPx = (int)MathF.Ceiling((reach + 4) * Renderer.Dpi / 96f);
         (_centerX, _centerY) = WheelLayout.ClampCenter(pt.X, pt.Y, ringPx, _work.left, _work.top, _work.right, _work.bottom);
 
@@ -529,6 +611,7 @@ internal sealed unsafe partial class App
         KeyHook.Uninstall();
         ResetSubs();
         _view.Hover = -1;
+        _view.RowHover = -1;
         _view.Clips = false;
         _view.Query = false;
         _view.QueryText = "";
@@ -560,6 +643,14 @@ internal sealed unsafe partial class App
         return _layout.IsOutside(dx, dy);
     }
 
+    private int RowHitClient(LPARAM lParam)
+    {
+        if (!Renderer.HasRow || _view.Clips || _view.Query) return -1;
+        int x = (short)(lParam.Value & 0xFFFF) + _work.left, y = (short)((lParam.Value >> 16) & 0xFFFF) + _work.top;
+        float scale = 96f / Renderer.Dpi;
+        return Renderer.RowHit((x - _centerX) * scale, (y - _centerY) * scale);
+    }
+
     private int HitTestScreen(int x, int y)
     {
         float scale = 96f / Renderer.Dpi;
@@ -568,6 +659,12 @@ internal sealed unsafe partial class App
 
     private void OnKey(VIRTUAL_KEY vk)
     {
+        if (vk == VIRTUAL_KEY.VK_TAB && !_view.Clips)
+        {
+            int n = _wheelSets.Count;
+            if (n > 1) SwitchWheel((_wheel + (KeyHook.IsDown(VIRTUAL_KEY.VK_SHIFT) ? n - 1 : 1)) % n);
+            return;
+        }
         if (Renderer.Ring is { } band && !_view.Clips) { OnRingKey(vk, band); return; }
         switch (vk)
         {
@@ -608,10 +705,27 @@ internal sealed unsafe partial class App
         var s = _slices[slice];
         if (BenchMode) { Close(); return; }   // the bench never launches anything
         if (s.OnRun != null || s.OnOpen != null) { RunGenerated(s); return; }
-        if (s.Def.Kind == SliceKind.Search) { EnterQuery(slice); return; }
+        RunDef(s, slice);
+    }
+
+    /// <summary>
+    /// Runs a configured slice: one on the wheel (<paramref name="slice"/> is its index) or a group's child
+    /// chosen from the band (<paramref name="slice"/> is the group's slice, which the search box then belongs to).
+    /// </summary>
+    private void RunDef(SliceDef s, int slice)
+    {
+        if (s.Def.Kind == SliceKind.Search) { CloseBand(); EnterQuery(slice, s.Def); return; }
+        if (s.Def.Kind == SliceKind.Group)
+        {
+            if (s.Def.RunAll) { Close(); _actions.RunAll(s.Def); }
+            else if (!UseRing && s.Children.Length < ConfigLoader.MinSlices) RunDef(s.Children[0], slice);   // one child: no wheel of one
+            else EnterSub(new SubWheel(s.Label, s.Children), slice);
+            return;
+        }
         switch (s.Tool)
         {
             case ToolKind.Clips:
+                CloseBand();
                 EnterClips();
                 return;
             case ToolKind.Screenshot:
@@ -634,15 +748,15 @@ internal sealed unsafe partial class App
 
     // ───────────────────────── search box ─────────────────────────
 
-    private int _querySlice = -1;
+    private Slice? _queryDef;
 
-    private void EnterQuery(int slice)
+    private void EnterQuery(int slice, Slice def)
     {
-        _querySlice = slice;
+        _queryDef = def;
         _view.Hover = slice;
         _view.Query = true;
         _view.QueryText = "";
-        _view.QueryEngine = SearchEngines.NameOf(_slices[slice].Def.SearchTemplate);
+        _view.QueryEngine = SearchEngines.NameOf(def.SearchTemplate);
         KeyHook.TextMode = true;
         Renderer.Draw(_view);
     }
@@ -666,7 +780,7 @@ internal sealed unsafe partial class App
                 return;
             case VIRTUAL_KEY.VK_RETURN:
                 if (q.Trim().Length == 0) return;
-                var slice = _slices[_querySlice].Def;
+                var slice = _queryDef!;
                 Close();
                 _actions.Search(slice, q);
                 return;
@@ -908,7 +1022,18 @@ internal sealed unsafe partial class App
         if (mouseMsg != PInvoke.WM_RBUTTONUP && mouseMsg != PInvoke.WM_CONTEXTMENU) return;
 
         HMENU menu = PInvoke.CreatePopupMenu();
-        Append(menu, CmdOpen, _hotkeyOk ? $"Open wheel\t{ActiveHotkey}" : "Open wheel");
+        if (_wheelSets.Count > 1)
+        {
+            HMENU wheels = PInvoke.CreatePopupMenu();
+            for (int i = 0; i < _wheelSets.Count; i++)
+            {
+                string? key = i == 0 ? (_hotkeyOk ? ActiveHotkey.ToString() : null)
+                    : _wheelHotkeys.ContainsValue(i) && Hotkey.TryParse(_wheelSets[i].Hotkey, out var hk) ? hk.ToString() : null;
+                Append(wheels, CmdWheel0 + i, key is null ? _wheelSets[i].Name : $"{_wheelSets[i].Name}\t{key}");
+            }
+            SubMenu(menu, wheels, "Open wheel");
+        }
+        else Append(menu, CmdOpen, _hotkeyOk ? $"Open wheel\t{ActiveHotkey}" : "Open wheel");
         Append(menu, CmdClips, "Open Clips (copied images)");
         PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, (PCWSTR)null);
         HMENU themes = PInvoke.CreatePopupMenu();
@@ -970,7 +1095,8 @@ internal sealed unsafe partial class App
     {
         switch (id)
         {
-            case CmdOpen: Open(Stopwatch.GetTimestamp()); break;
+            case CmdOpen: Open(Stopwatch.GetTimestamp(), wheel: 0); break;
+            case >= CmdWheel0 when id < CmdWheel0 + ConfigLoader.MaxWheels: Open(Stopwatch.GetTimestamp(), wheel: id - CmdWheel0); break;
             case CmdClips: Open(Stopwatch.GetTimestamp(), clips: true); break;
             case CmdPause: _paused = !_paused; if (_paused) Close(); break;
             case CmdClearClips:
@@ -1007,6 +1133,7 @@ internal sealed unsafe partial class App
         var nid = TrayData();
         PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_DELETE, &nid);
         if (_hotkeyOk) PInvoke.UnregisterHotKey(Overlay, HotkeyId);
+        foreach (int id in _wheelHotkeys.Keys) PInvoke.UnregisterHotKey(Overlay, id);
         _pipe?.Stop();
         PInvoke.PostQuitMessage(0);
     }

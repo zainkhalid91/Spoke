@@ -101,7 +101,7 @@ internal sealed unsafe class Toast
         if (_message)
         {
             // Text notice: a round badge on the left, text across the rest of the card.
-            var tone = _error ? C(0xFF6B6B) : t.Hue(3);
+            var tone = _error ? C(0xFF6B6B) : t.Glow(3);
             _g.FillCircle(pad + 19, 30, 17, WithAlpha(tone, 0.16f));
             _g.Text(_error ? "" : "", _fmtGlyph, pad + 19, 30, 30, 30, tone);
             float mx = pad + 38 + 12, mw = W - mx - 16;
@@ -129,8 +129,8 @@ internal sealed unsafe class Toast
         _g.Text(title, _fmtTitle, tx + tw / 2, H / 2 - 9, tw, 18, t.Text);
         _g.Text(sub, _fmtSub, tx + tw / 2, H / 2 + 10, tw, 16, t.TextDim);
         // A check in the accent colour.
-        _g.FillCircle(W - 26, H / 2, 11, WithAlpha(t.Hue(3), 0.18f));
-        _g.Text(''.ToString(), _fmtGlyph, W - 26, H / 2, 22, 22, t.Hue(3));
+        _g.FillCircle(W - 26, H / 2, 11, WithAlpha(t.Glow(3), 0.18f));
+        _g.Text(''.ToString(), _fmtGlyph, W - 26, H / 2, 22, 22, t.Glow(3));
         _surface.End();
     }
 

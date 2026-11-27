@@ -92,7 +92,9 @@ internal static unsafe class KeyHook
         {
             var kb = (KBDLLHOOKSTRUCT*)lParam.Value;
             uint vk = kb->vkCode;
-            if (vk < 256 && (TextMode ? !IsModifier(vk) : Swallow[vk]))
+            // Alt+Tab always reaches Windows (Tab switches wheels only on its own).
+            bool altTab = vk == 0x09 && ((uint)kb->flags & 0x20) != 0;   // LLKHF_ALTDOWN
+            if (vk < 256 && !altTab && (TextMode ? !IsModifier(vk) : Swallow[vk]))
             {
                 uint m = (uint)wParam.Value;
                 if (m == PInvoke.WM_KEYDOWN || m == PInvoke.WM_SYSKEYDOWN)

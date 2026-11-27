@@ -12,12 +12,22 @@ internal static unsafe class Program
     private static SafeHandle? _singleInstance;
 
     [STAThread]
+    private static int Usage(string text)
+    {
+        Console.Error.WriteLine("Usage: " + text);
+        return 2;
+    }
+
     private static int Main(string[] args)
     {
         long t0 = Stopwatch.GetTimestamp();
         if (args.Contains("--focus-target")) { FocusTarget.Run(); return 0; }
         int wi = Array.IndexOf(args, "--worker");
         if (wi >= 0 && wi + 1 < args.Length) return Worker.Run(args[wi + 1]);   // a file job, not the daemon
+        int ei = Array.IndexOf(args, "--export");
+        if (ei >= 0) return ei + 2 < args.Length ? WheelCli.Export(args[ei + 1], args[ei + 2]) : Usage("Spoke.exe --export <wheel name or number> <file.spoke>");
+        int ii = Array.IndexOf(args, "--import");
+        if (ii >= 0) return ii + 1 < args.Length ? WheelCli.Import(args[ii + 1]) : Usage("Spoke.exe --import <file.spoke>");
         if (args.Contains("--render"))
         {
             PInvoke.CoInitializeEx(null, COINIT.COINIT_APARTMENTTHREADED);

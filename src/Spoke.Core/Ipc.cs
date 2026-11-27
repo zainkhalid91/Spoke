@@ -26,6 +26,8 @@ public sealed class IpcReply
     /// <summary>Errors in settings.json the daemon is currently ignoring (it keeps the last good config).</summary>
     public List<string> Errors { get; set; } = [];
     public int Slices { get; set; }
+    /// <summary>How many wheels are configured.</summary>
+    public int Wheels { get; set; }
     /// <summary>reload: how long applying the new config took inside the daemon.</summary>
     public double ApplyMs { get; set; }
     public int Pid { get; set; }

@@ -35,6 +35,30 @@ internal sealed unsafe class Actions
         Post(() => Execute(s));
     }
 
+    /// <summary>
+    /// A "run all" group: each child in order on the action thread, <see cref="Slice.DelayMs"/> apart, so an app
+    /// can start before the next step (text typed after launching an editor lands in it). One failing step is
+    /// reported and the rest still run.
+    /// </summary>
+    public void RunAll(Slice group)
+    {
+        PInvoke.AllowSetForegroundWindow(PInvoke.ASFW_ANY);
+        Post(() =>
+        {
+            for (int i = 0; i < group.Children.Count; i++)
+            {
+                if (i > 0 && group.DelayMs > 0) Thread.Sleep(group.DelayMs);
+                var child = group.Children[i];
+                try { Execute(child); }
+                catch (Exception ex)
+                {
+                    Log.Write($"Run all ({group.Label}) step {i + 1} failed: {ex}");
+                    _notify($"{group.Label}: step {i + 1} failed", $"{child.Label}: {ex.Message}", true);
+                }
+            }
+        });
+    }
+
     public void Search(Slice s, string query)
     {
         PInvoke.AllowSetForegroundWindow(PInvoke.ASFW_ANY);

@@ -45,15 +45,47 @@ internal sealed class ConfigStore : IDisposable
         _poll.Start();
     }
 
-    public WheelConfig Wheel
+    /// <summary>The wheel the Wheels page is editing.</summary>
+    public int WheelIndex { get; set; }
+
+    public List<WheelConfig> Wheels
     {
         get
         {
             var c = Config!;
             if (c.Wheels is not { Count: > 0 }) c.Wheels = [ConfigLoader.DefaultWheel()];
-            c.Wheels[0].Slices ??= ConfigLoader.DefaultWheel().Slices;
-            return c.Wheels[0];
+            foreach (var w in c.Wheels) w.Slices ??= [];
+            c.Wheels[0].Slices = c.Wheels[0].Slices is { Count: > 0 } s ? s : ConfigLoader.DefaultWheel().Slices;
+            return c.Wheels;
         }
+    }
+
+    public WheelConfig Wheel
+    {
+        get
+        {
+            var all = Wheels;
+            WheelIndex = Math.Clamp(WheelIndex, 0, all.Count - 1);
+            return all[WheelIndex];
+        }
+    }
+
+    /// <summary>The shortcut of wheel <paramref name="i"/> as configured (the first wheel's lives in the top-level "hotkey").</summary>
+    public string? HotkeyOf(int i) => i == 0 ? Wheels[0].Hotkey ?? Config!.Hotkey : i < Wheels.Count ? Wheels[i].Hotkey : null;
+
+    public void SetHotkey(int i, string? value)
+    {
+        if (i == 0) { Config!.Hotkey = value; Wheels[0].Hotkey = null; }
+        else Wheels[i].Hotkey = value;
+    }
+
+    /// <summary>A wheel name not used yet: "Dev", else "Dev 2", "Dev 3"….</summary>
+    public string FreeName(string name)
+    {
+        var taken = new HashSet<string>(Wheels.Select(w => (w.Name ?? "").Trim()), StringComparer.OrdinalIgnoreCase);
+        string unique = name;
+        for (int n = 2; taken.Contains(unique); n++) unique = $"{name} {n}";
+        return unique;
     }
 
     private void Load()
@@ -80,7 +112,7 @@ internal sealed class ConfigStore : IDisposable
         }
         FileErrors = [];
         Config = ConfigLoader.Clone(r.Config);
-        if (r.UsedDefaultWheel) Config.Wheels = [ConfigLoader.DefaultWheel()];
+        if (r.UsedDefaultWheel) Config.Wheels = [ConfigLoader.DefaultWheel(), .. (Config.Wheels ?? []).Skip(1)];
     }
 
     /// <summary>Validates the whole working config. Empty when it's fine to save.</summary>

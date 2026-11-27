@@ -15,7 +15,8 @@ internal sealed unsafe partial class App
     private readonly List<(string Name, SliceDef[] Slices)> _subStack = [];
 
     /// <summary>subMenus "ring": options open as an outer band around their slice instead of a new wheel.</summary>
-    private bool UseRing = true;
+    // Starts false to match the renderer (wheel-sized surface), so a ring setting at start-up resizes it.
+    private bool UseRing;
     /// <summary>The bands opened so far (Files ▸ Convert ▸ …): the last one is showing. All share one parent slice.</summary>
     private readonly List<SubWheel> _bandStack = [];
     private int _bandParent = -1;
@@ -61,7 +62,9 @@ internal sealed unsafe partial class App
     {
         var band = Renderer.Ring;
         if (band is null || item < 0 || item >= band.Items.Length) return;
-        RunGenerated(band.Items[item]);
+        var s = band.Items[item];
+        if (s.OnRun != null || s.OnOpen != null) RunGenerated(s);
+        else if (!BenchMode) RunDef(s, band.Parent);   // a group's child
     }
 
     private void SetHovers(int slice, int item)

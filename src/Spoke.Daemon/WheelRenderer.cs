@@ -25,6 +25,8 @@ internal sealed class WheelView
     public int Hover = -1;
     /// <summary>The hovered item of the outer band (subMenus "ring"), or -1.</summary>
     public int RingHover = -1;
+    /// <summary>The hovered pill of the wheel row (index into the wheels), or -1.</summary>
+    public int RowHover = -1;
     public bool Clips;
     public ClipThumb[] Thumbs = new ClipThumb[Spoke.Core.ConfigLoader.MaxSlices];
     public int ClipCount, Page, Pages;
@@ -88,6 +90,18 @@ internal sealed unsafe class WheelRenderer
         public string[] Glyphs = [];
     }
     public RingBand? Ring { get; private set; }
+
+    // The wheel row: a pill per wheel under the ring (only with 2+ wheels). Pills that don't fit are left out
+    // around the active one; Tab still reaches them.
+    private string[] _rowNames = [];
+    private int _rowActive;
+    private readonly List<(int Index, float L, float R, string Text)> _rowPills = [];
+    private IDWriteTextFormat* _fmtRow;
+    private const float RowH = 20f;
+    public bool HasRow => _rowNames.Length > 1;
+    private float RowY => Layout.OuterRadius + 27f;
+    /// <summary>How far below the centre the row reaches (for clamping the wheel on screen).</summary>
+    public float RowBottom => RowY + RowH / 2 + 2;
     private IDWriteTextFormat* _fmtRingLabel;
     private uint _monitorDpi = 96;
 
@@ -113,6 +127,7 @@ internal sealed unsafe class WheelRenderer
         _fmtHubSub = g.Format(ui, 9f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
         _fmtPill = g.Format(mono, 8.5f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
         _fmtRingLabel = g.Format(ui, 10f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        _fmtRow = g.Format(ui, 10f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_SEMI_BOLD);
 
         _fmtQuery = g.Format(ui, 15f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT.DWRITE_TEXT_ALIGNMENT_LEADING);
         _fmtQueryHint = g.Format(ui, 10f, DWRITE_FONT_WEIGHT.DWRITE_FONT_WEIGHT_NORMAL);
@@ -156,6 +171,47 @@ internal sealed unsafe class WheelRenderer
 
     public SliceDef[] Slices => _slices;
 
+    /// <summary>The wheels to show in the row and which one is showing. One name (or none) hides the row.</summary>
+    public void SetRow(string[] names, int active)
+    {
+        _rowNames = names;
+        _rowActive = active;
+        _rowPills.Clear();
+        if (names.Length < 2) return;
+        const float gap = 6f, maxWidth = 404f;
+        var widths = new float[names.Length];
+        var texts = new string[names.Length];
+        for (int i = 0; i < names.Length; i++)
+        {
+            string n = names[i].Length > 18 ? names[i][..17] + "…" : names[i];
+            texts[i] = n;
+            widths[i] = MathF.Ceiling(_g.Measure(n, _fmtRow)) + 22f;
+        }
+        // Grow outwards from the active wheel while there's room.
+        int lo = active, hi = active;
+        float total = widths[active];
+        for (bool grew = true; grew;)
+        {
+            grew = false;
+            if (hi + 1 < names.Length && total + gap + widths[hi + 1] <= maxWidth) { total += gap + widths[++hi]; grew = true; }
+            if (lo - 1 >= 0 && total + gap + widths[lo - 1] <= maxWidth) { total += gap + widths[--lo]; grew = true; }
+        }
+        float x = -total / 2;
+        for (int i = lo; i <= hi; i++)
+        {
+            _rowPills.Add((i, x, x + widths[i], texts[i]));
+            x += widths[i] + gap;
+        }
+    }
+
+    /// <summary>The wheel whose pill is under a point (relative to the centre, DIPs), or -1.</summary>
+    public int RowHit(float dx, float dy)
+    {
+        if (!HasRow || Ring != null || MathF.Abs(dy - RowY) > RowH / 2 + 3) return -1;
+        foreach (var p in _rowPills) if (dx >= p.L - 3 && dx <= p.R + 3) return p.Index;
+        return -1;
+    }
+
     /// <summary>Builds the cached resting wheel now (after returning from a sub-wheel), so the next open is one blit.</summary>
     public void Warm() => EnsureCache();
 
@@ -166,7 +222,7 @@ internal sealed unsafe class WheelRenderer
         for (int i = 0; i < MaxSlices; i++)
         {
             Release(_glow[i]);
-            var h = t.Hue(i);
+            var h = t.Glow(i);
             _glow[i] = _g.Radial(0, 0, 118, (0f, WithAlpha(h, t.GlowAlpha)), (0.55f, WithAlpha(h, t.GlowAlpha * 0.35f)), (1f, WithAlpha(h, 0)));
         }
         float o = Layout.OuterRadius, inner = Layout.InnerRadius / o;
@@ -330,7 +386,7 @@ internal sealed unsafe class WheelRenderer
         if (Ring is { } band) DrawRing(band, v);
         // With a band open, the colour (and needle) belong to its slice unless another slice is hovered.
         int lead = hover >= 0 ? hover : Ring?.Parent ?? -1;
-        var accent = lead >= 0 ? t.Hue(lead) : t.Hue(0);
+        var accent = lead >= 0 ? t.Glow(lead) : t.Glow(0);
         hover = lead;
 
         // The spoke: a needle from the hub to the hovered slice, with its number on a bead.
@@ -352,6 +408,29 @@ internal sealed unsafe class WheelRenderer
         else if (Ring is { } r && (v.RingHover >= 0 || v.Hover < 0)) DrawRingHub(r, v.RingHover, accent);
         else DrawMainHub(hover, accent);
         if (v.Query) DrawQuery(v, accent);
+        else if (HasRow && Ring == null && !v.Clips) DrawRow(v);
+    }
+
+    /// <summary>The wheel row: the showing wheel as a solid pill, the others as quiet ones.</summary>
+    private void DrawRow(WheelView v)
+    {
+        var t = Theme;
+        float y = RowY, top = y - RowH / 2, bottom = y + RowH / 2;
+        foreach (var (i, l, r, text) in _rowPills)
+        {
+            bool active = i == _rowActive, hov = i == v.RowHover;
+            if (active)
+            {
+                _g.FillRound(l, top, r, bottom, RowH / 2, t.Light ? C(0x20242C) : C(0xEEF1F6));
+                _g.Text(text, _fmtRow, (l + r) / 2, y, r - l, RowH, t.Light ? C(0xFFFFFF) : C(0x14171E));
+            }
+            else
+            {
+                _g.FillRound(l, top, r, bottom, RowH / 2, t.Light ? WithAlpha(t.RingOuter, 0.97f) : WithAlpha(t.HubBottom, 0.92f));
+                _g.StrokeRound(l + 0.5f, top + 0.5f, r - 0.5f, bottom - 0.5f, RowH / 2, hov ? WithAlpha(t.Glow(0), 0.8f) : t.Stroke, 1f);
+                _g.Text(text, _fmtRow, (l + r) / 2, y, r - l, RowH, hov ? t.Text : t.TextDim);
+            }
+        }
     }
 
     private float Dial => (Layout.HubRadius + Layout.InnerRadius) / 2f;
@@ -385,7 +464,7 @@ internal sealed unsafe class WheelRenderer
         var ring = Layout;
         float E = Extent;
         float am = ring.CenterAngle(i);
-        var hue = t.Hue(i);
+        D2D1_COLOR_F hue = t.Hue(i), glow = t.Glow(i);   // icon colour, light-up colour
         if (hov) _g.SetTranslate(E + Lift * MathF.Cos(am), E + Lift * MathF.Sin(am));
         var geo = (ID2D1Geometry*)_sliceGeo[i];
 
@@ -407,11 +486,11 @@ internal sealed unsafe class WheelRenderer
         }
         if (!image) dc->FillGeometry(geo, (ID2D1Brush*)_highlight, null);
 
-        _g.SetColor(hov ? WithAlpha(hue, 0.65f) : t.Stroke);
+        _g.SetColor(hov ? WithAlpha(glow, 0.65f) : t.Stroke);
         dc->DrawGeometry(geo, (ID2D1Brush*)_g.Brush, hov ? 1.2f : 1f, null);
         if (hov)
         {
-            _g.SetColor(hue);
+            _g.SetColor(glow);
             dc->FillGeometry((ID2D1Geometry*)_edgeGeo[i], (ID2D1Brush*)_g.Brush, null);
         }
 
@@ -425,7 +504,7 @@ internal sealed unsafe class WheelRenderer
         {
             // Colour tile + glyph, then the label.
             _g.FillRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(hue, hov ? t.TileAlphaHover : t.TileAlpha));
-            if (hov) _g.StrokeRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(hue, 0.55f), 1f);
+            if (hov) _g.StrokeRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(glow, 0.55f), 1f);
             if (_slices[i].Icon != null) DrawIcon(_slices[i].Icon, ix, iy - 11, 22);
             else _g.Text(_glyphs[i], _fmtGlyph, ix, iy - 11, 32, 32, hue);
             _g.Text(_slices[i].Label, _fmtLabel, ix, iy + 18, 110, 16, hov ? t.Text : t.TextDim);
@@ -501,7 +580,7 @@ internal sealed unsafe class WheelRenderer
         {
             var s = _slices[hover];
             if (s.Icon != null) DrawIcon(s.Icon, 0, -24, 24);
-            else _g.Text(_glyphs[hover], _fmtGlyphHub, 0, -24, 40, 26, accent);
+            else _g.Text(_glyphs[hover], _fmtGlyphHub, 0, -24, 40, 26, Theme.Hue(hover));
             _g.Text(s.Label, _fmtHub, 0, 2, 112, 20, t.Text);
             _g.Text(s.Detail, _fmtHubSub, 0, 20, 112, 13, t.TextFaint);
         }
@@ -509,7 +588,8 @@ internal sealed unsafe class WheelRenderer
         {
             _g.FillCircle(0, -22, 4f, accent);
             _g.Text(WheelName, _fmtHub, 0, 0, 112, 20, t.Text);
-            _g.Text("1–8 · arrows · Esc", _fmtHubSub, 0, 19, 112, 13, t.TextFaint);
+            int n = Math.Min(_slices.Length, 9);
+            _g.Text(HasRow ? $"1–{n} · Tab wheels · Esc" : $"1–{n} · arrows · Esc", _fmtHubSub, 0, 19, 118, 13, t.TextFaint);
         }
     }
 
@@ -522,7 +602,7 @@ internal sealed unsafe class WheelRenderer
         var t = Theme;
         var dc = _g.Dc;
         var L = band.Layout;
-        var hue = t.Hue(band.Parent);
+        var hue = t.Glow(band.Parent);
         _g.SetColor(t.Light ? WithAlpha(t.RingOuter, 0.96f) : WithAlpha(t.HubBottom, 0.9f));
         dc->FillGeometry((ID2D1Geometry*)band.Back, (ID2D1Brush*)_g.Brush, null);
 
@@ -543,7 +623,9 @@ internal sealed unsafe class WheelRenderer
                 dc->FillGeometry((ID2D1Geometry*)band.Edge[i], (ID2D1Brush*)_g.Brush, null);
             }
             float a = L.CenterAngle(i), c = MathF.Cos(a), s = MathF.Sin(a);
-            _g.Text(band.Glyphs[i], _fmtGlyph, rMid * c, rMid * s - 9f, 30, 24, hov ? t.Text : hue);
+            // Each item's icon in its own colour (offset from the parent's, so the first item isn't the slice's twin).
+            if (band.Items[i].Icon != null) DrawIcon(band.Items[i].Icon, rMid * c, rMid * s - 9f, 20);
+            else _g.Text(band.Glyphs[i], _fmtGlyph, rMid * c, rMid * s - 9f, 30, 24, hov ? t.Text : t.Hue(band.Parent + 1 + i));
             _g.Text(band.Items[i].Label, _fmtRingLabel, rMid * c, rMid * s + 14f, 70, 14, hov ? t.Text : t.TextDim);
         }
     }
@@ -555,7 +637,8 @@ internal sealed unsafe class WheelRenderer
         if (item >= 0)
         {
             var s = band.Items[item];
-            _g.Text(band.Glyphs[item], _fmtGlyphHub, 0, -24, 40, 26, accent);
+            if (s.Icon != null) DrawIcon(s.Icon, 0, -24, 24);
+            else _g.Text(band.Glyphs[item], _fmtGlyphHub, 0, -24, 40, 26, Theme.Hue(band.Parent + 1 + item));
             _g.Text(s.Label, _fmtHub, 0, 2, 112, 20, t.Text);
             _g.Text(s.Detail, _fmtHubSub, 0, 20, 112, 13, t.TextFaint);
         }

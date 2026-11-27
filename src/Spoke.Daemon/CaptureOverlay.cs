@@ -293,7 +293,7 @@ internal sealed unsafe class CaptureOverlay
 
     private void DrawScreenshot()
     {
-        var accent = T.Hue(0);
+        var accent = T.Glow(0);
         RECT focus = _dragging && _hasDrag ? DragRect() : WindowOrMonitorAt(_mx, _my);
         bool hasFocus = !(_dragging && !_hasDrag);
         float l = focus.left - Ox, t = focus.top - Oy, r = focus.right - Ox, b = focus.bottom - Oy;
@@ -430,8 +430,8 @@ internal sealed unsafe class CaptureOverlay
         {
             var f = _colorCfg.Formats[i];
             bool def = f.Name == _colorCfg.Copy.Name;
-            if (def) _g.FillRound(pl + 8, y - 1, pl + PanelW - 8, y + 19, 6, WithAlpha(t.Hue(1), t.Light ? 0.12f : 0.16f));
-            _g.Text((i + 1).ToString(), _fmtSmall, pl + 20, y + 9, 14, 14, def ? t.Hue(1) : t.TextFaint);
+            if (def) _g.FillRound(pl + 8, y - 1, pl + PanelW - 8, y + 19, 6, WithAlpha(t.Glow(1), t.Light ? 0.12f : 0.16f));
+            _g.Text((i + 1).ToString(), _fmtSmall, pl + 20, y + 9, 14, 14, def ? t.Glow(1) : t.TextFaint);
             _g.Text(f.Name, _fmtSmall, pl + 48, y + 9, 40, 14, t.TextDim);
             _g.Text(f.Render(c), _fmtMono, pl + 72 + 74, y + 9, 148, 16, t.Text);
             y += 22;

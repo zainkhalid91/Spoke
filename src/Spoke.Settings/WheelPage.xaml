@@ -21,7 +21,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="Wheel" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="Wheels" Style="{StaticResource TitleTextBlockStyle}" />
             <Button Grid.Column="1" Click="OnPreview" AutomationProperties.Name="Show wheel" ToolTipService.ToolTip="Opens the real wheel under the mouse pointer">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE7B3;" FontSize="14" />
@@ -36,13 +36,46 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBox x:Name="WheelName" Header="Name" PlaceholderText="Spoke" TextChanged="OnWheelNameChanged" />
+            <!-- Which wheel; Tab switches between them on screen -->
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ListView x:Name="WheelList" SelectionMode="Single" SelectionChanged="OnWheelSelected"
+                          AutomationProperties.Name="Wheels"
+                          ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+                </ListView>
+                <DropDownButton Grid.Column="1" x:Name="WheelMenu" AutomationProperties.Name="Wheel actions" ToolTipService.ToolTip="New, copy, import, export or delete a wheel"
+                                VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE712;" FontSize="14" />
+                    <DropDownButton.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuFlyoutItem Text="New wheel" Click="OnNewWheel"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE710;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Duplicate this wheel" Click="OnDuplicateWheel"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Import a wheel…" Click="OnImportWheel"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B5;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Export this wheel…" Click="OnExportWheel"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xEDE1;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem x:Name="DeleteWheelItem" Text="Delete this wheel" Click="OnDeleteWheel"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        </MenuFlyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+            </Grid>
 
-            <StackPanel Grid.Row="1" Spacing="6">
+            <TextBox x:Name="WheelName" Grid.Row="1" Header="Name" PlaceholderText="Spoke" TextChanged="OnWheelNameChanged" />
+
+            <StackPanel Grid.Row="2" Spacing="6">
                 <TextBlock Text="Shortcut" Style="{StaticResource BodyStrongTextBlockStyle}" />
                 <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
@@ -66,11 +99,15 @@
                 </InfoBar>
             </StackPanel>
 
-            <Grid Grid.Row="2">
-                <TextBlock x:Name="SliceCount" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Bottom" />
-            </Grid>
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+                <Button x:Name="GroupBack" AutomationProperties.Name="Back to the wheel" ToolTipService.ToolTip="Back to the wheel's slices"
+                        Click="OnGroupBack" Visibility="Collapsed" Padding="8,4">
+                    <FontIcon Glyph="&#xE72B;" FontSize="12" />
+                </Button>
+                <TextBlock x:Name="SliceCount" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+            </StackPanel>
 
-            <ListView x:Name="SliceList" Grid.Row="3" SelectionMode="Single"
+            <ListView x:Name="SliceList" Grid.Row="4" SelectionMode="Single"
                       CanReorderItems="True" AllowDrop="True" CanDragItems="True"
                       SelectionChanged="OnSliceSelected" DragItemsCompleted="OnSlicesReordered"
                       BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -95,7 +132,7 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6" Margin="0,0,0,12">
+            <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="6" Margin="0,0,0,12">
                 <DropDownButton x:Name="AddButton" AutomationProperties.Name="Add slice" ToolTipService.ToolTip="Add a slice">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE710;" FontSize="14" />
@@ -109,6 +146,7 @@
                             <MenuFlyoutItem Text="Web search" Tag="search" Click="OnAdd"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
                             <MenuFlyoutItem Text="Text snippet" Tag="text" Click="OnAdd"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8D2;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
                             <MenuFlyoutItem Text="Tool" Tag="tool" Click="OnAdd"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE90F;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                            <MenuFlyoutItem x:Name="AddGroupItem" Text="Group (more choices, or run several)" Tag="group" Click="OnAdd"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8FD;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
                         </MenuFlyout>
                     </DropDownButton.Flyout>
                 </DropDownButton>
@@ -138,6 +176,7 @@
                     <ComboBoxItem Content="Web search" Tag="search" />
                     <ComboBoxItem Content="Text snippet" Tag="text" />
                     <ComboBoxItem Content="Tool" Tag="tool" />
+                    <ComboBoxItem x:Name="TypeGroupItem" Content="Group" Tag="group" />
                 </ComboBox>
 
                 <!-- tool -->
@@ -185,6 +224,20 @@
                 <TextBox x:Name="SnippetBox" Header="Text to type" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="96" TextChanged="OnFieldChanged" />
                 <TextBlock x:Name="TokensHint" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.75"
                            Text="Tokens: {date} {time} {iso} {unix} {uuid} {clipboard}, or a format like {date:dd MMM yyyy}." />
+
+                <!-- group -->
+                <StackPanel x:Name="GroupPanel" Spacing="12">
+                    <ToggleSwitch x:Name="RunAllSwitch" Header="When chosen" Toggled="OnRunAllToggled"
+                                  OffContent="Show its items around the slice" OnContent="Run every item, in order" />
+                    <NumberBox x:Name="DelayBox" Header="Pause between items (milliseconds)" Minimum="0" Maximum="10000" SmallChange="100" LargeChange="500"
+                               SpinButtonPlacementMode="Compact" ValueChanged="OnDelayChanged" HorizontalAlignment="Left" MinWidth="220" />
+                    <Button x:Name="EditGroupButton" Click="OnEditGroup">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                            <TextBlock x:Name="EditGroupText" Text="Edit items" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
 
                 <MenuFlyoutSeparator />
                 <TextBox x:Name="LabelBox" Header="Label" TextChanged="OnFieldChanged" />

@@ -29,7 +29,7 @@
                         IsPaneToggleButtonVisible="False" OpenPaneLength="200"
                         SelectionChanged="OnNavSelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Wheel" Tag="wheel">
+                <NavigationViewItem Content="Wheels" Tag="wheel">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE7C9;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Appearance" Tag="appearance">

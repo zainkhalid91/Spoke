@@ -39,8 +39,8 @@
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
                 <TextBlock Text="Reset" Style="{StaticResource BodyStrongTextBlockStyle}" />
                 <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.75" TextWrapping="Wrap"
-                           Text="Put back Spoke's starter wheel. Your shortcut and appearance stay as they are." />
-                <Button Content="Reset the wheel…" Click="OnResetWheel" />
+                           Text="Put back Spoke's starter wheel in place of all your wheels. Your shortcut and appearance stay as they are." />
+                <Button Content="Reset wheels…" Click="OnResetWheel" />
             </StackPanel>
 
             <TextBlock x:Name="VersionText" Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.6" />

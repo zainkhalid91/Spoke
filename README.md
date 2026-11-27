@@ -20,6 +20,8 @@ Open the wheel with **Ctrl+Alt+Z**. Choose a slice on the ring or press 1–8; a
 
 **M2** adds **Spoke Settings** (tray → *Settings…* or double-click the tray icon): edit the wheel, its shortcut (it tells you if another app holds it and suggests free ones), theme, colours, size and start-up. Changes apply in milliseconds.
 
+**M3** adds **many wheels**: give each its own shortcut (Settings → Wheels), and press **Tab** / Shift+Tab or click a pill under the wheel to switch in place. **Group** slices hold up to 12 items that fan out around the slice, or with *Run every item* switched on (`"runAll": true`, `"delay": 500`) run them in order. Wheels export to and import from `.spoke` files (Settings → Wheels → ⋯, or `Start-Process -Wait Spoke.exe "--export Dev dev.spoke"` / `--import dev.spoke`); paths under your user folders become `%ENV%` forms. Icons keep the theme's colours; a Windows or custom accent only colours the highlight.
+
 **More options as an outer ring:** Files, Text tools, Generate and System open their options as a band that fans out around the slice, so the wheel stays in view (hub shows the path, e.g. *Files ▸ Convert*; Esc or the hub goes back, the slice again folds it, arrows/digits/Enter work too). Prefer the old way? Settings → Appearance → *More options*, or `"subMenus": "wheel"`. `Spoke.exe --render out.png [--theme Onyx] [--ring 3]` draws the wheel to a PNG without showing anything.
 
 ```jsonc

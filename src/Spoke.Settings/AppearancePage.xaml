@@ -41,9 +41,10 @@
             <!-- Colours -->
             <StackPanel Spacing="10" Padding="20" CornerRadius="8" BorderThickness="1"
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
-                <TextBlock Text="Slice colours" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Text="Highlight colour" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Text="The glow, edge and needle when you point at a slice. Icons keep the theme's colours." Opacity="0.8" TextWrapping="Wrap" />
                 <RadioButtons x:Name="AccentChoice">
-                    <RadioButton Content="The theme's colours (each slice its own hue)" Tag="theme" Checked="OnAccentChanged" />
+                    <RadioButton Content="Each slice lights up in its own colour" Tag="theme" Checked="OnAccentChanged" />
                     <RadioButton Content="Windows accent colour (follows Windows when you change it)" Tag="windows" Checked="OnAccentChanged" />
                     <RadioButton Content="A colour of my own" Tag="custom" Checked="OnAccentChanged" />
                 </RadioButtons>

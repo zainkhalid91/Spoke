@@ -52,6 +52,7 @@ public sealed partial class SliceRow : INotifyPropertyChanged
         "search" => "Web search",
         "text" => "Text snippet",
         "tool" => "Tool",
+        "group" => "Group",
         _ => "Slice",
     };
 }

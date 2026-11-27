@@ -18,9 +18,12 @@ internal static unsafe class RenderTool
         int Int(string name, int def) => int.TryParse(Arg(name), out int v) ? v : def;
 
         string output = Arg("--render") ?? "wheel.png";
-        var settings = new Settings();
-        settings.Load(out _);
-        var cfg = settings.Current;
+        ConfigResult cfg;
+        if (Arg("--config") is { } file) cfg = ConfigLoader.Parse(File.ReadAllText(file));   // a test file instead of settings.json
+        else { var settings = new Settings(); settings.Load(out _); cfg = settings.Current; }
+        if (!cfg.Ok) { Console.Error.WriteLine(cfg.Errors[0]); return 1; }
+        int show = Math.Clamp(Int("--show", 1) - 1, 0, cfg.Wheels.Count - 1);
+        var shown = cfg.Wheels[show];
         var look = cfg.Appearance;
 
         var gfx = new Gfx(forceWarp: false);
@@ -30,22 +33,45 @@ internal static unsafe class RenderTool
             hwnd = PInvoke.CreateWindowEx(WINDOW_EX_STYLE.WS_EX_NOREDIRECTIONBITMAP | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW, cls, title,
                 WINDOW_STYLE.WS_POPUP, 0, 0, 1, 1, HWND.Null, HMENU.Null, HINSTANCE.Null, null);
 
-        var r = new WheelRenderer(gfx, hwnd, SliceDef.From(cfg.Slices)) { WheelName = cfg.WheelName };
+        var r = new WheelRenderer(gfx, hwnd, SliceDef.From(shown.Slices)) { WheelName = shown.Name };
+        r.SetRow([.. cfg.Wheels.Select(w => w.Name)], show);
         var theme = Theme.ByName(Arg("--theme") ?? look.ThemeFor(SystemLook.AppsUseLightTheme));
-        if (look.Accent == AccentMode.Custom && Arg("--theme") is null) theme = theme.WithAccent(look.AccentRgb);
+        if (look.Accent != AccentMode.Theme) theme = theme.WithAccent(look.Accent == AccentMode.Custom ? look.AccentRgb : SystemLook.AccentRgb);
         r.SetTheme(theme);
         r.SetRingMode(!args.Contains("--wheel"));
         r.Scale = float.TryParse(Arg("--scale"), System.Globalization.CultureInfo.InvariantCulture, out float sc) ? sc : 1.25f;
         r.SetDpi(96);
 
-        var view = new WheelView { Hover = Int("--hover", -1) };
+        var view = new WheelView { Hover = Int("--hover", -1), RowHover = Int("--row-hover", 0) - 1 };
         int ring = Int("--ring", -1);
-        if (ring >= 0 && ring < cfg.Slices.Count)
+        if (ring >= 0 && ring < shown.Slices.Count)
         {
-            var items = TextTools.All.Where(o => o.Op != TextTools.Op.Sentence)
+            var slices = SliceDef.From(shown.Slices);
+            var items = slices[ring].Children.Length > 0 ? slices[ring].Children : TextTools.All.Where(o => o.Op != TextTools.Op.Sentence)
                 .Select(o => SliceDef.Item(o.Label, o.Detail, o.Glyph, () => { })).ToArray();
-            r.OpenRing(ring, items, "Text tools");
+            r.OpenRing(ring, items, slices[ring].Children.Length > 0 ? slices[ring].Label : "Text tools");
             view.RingHover = Int("--ring-hover", -1);
+        }
+
+        if (Int("--switch-bench", 0) is int runs and > 0 && cfg.Wheels.Count > 1)
+        {
+            // Swap wheels like Tab does (new slices, row, a full frame) and time it.
+            var sets = cfg.Wheels.Select(w => SliceDef.From(w.Slices)).ToArray();
+            var names = cfg.Wheels.Select(w => w.Name).ToArray();
+            var times = new List<double>();
+            for (int i = 0; i < runs; i++)
+            {
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                int w = (i + 1) % sets.Length;
+                r.SetSlices(sets[w]);
+                r.WheelName = names[w];
+                r.SetRow(names, w);
+                r.Draw(new WheelView());
+                r.Commit();
+                times.Add(Log.Ms(t0, System.Diagnostics.Stopwatch.GetTimestamp()));
+            }
+            times.Sort();
+            Console.WriteLine($"switch x{runs}: p50 {times[runs / 2]:0.00} ms, p95 {times[(int)(runs * 0.95)]:0.00} ms, max {times[^1]:0.00} ms");
         }
 
         var pixels = r.Snapshot(view, theme.Light ? 0xC9CED6u : 0x2B3440u);

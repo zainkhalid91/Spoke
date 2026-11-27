@@ -25,8 +25,21 @@ internal sealed unsafe class SliceDef
     public string Detail => Def.Detail;
     public ToolKind Tool => Def.Tool;
 
+    /// <summary>Group: its children, ready to show as a band or a wheel.</summary>
+    public SliceDef[] Children = [];
+
     public static SliceDef[] From(IReadOnlyList<Slice> slices) =>
-        [.. slices.Select(s => new SliceDef { Def = s, Glyph = Glyphs.For(s) })];
+        [.. slices.Select(s => new SliceDef { Def = s, Glyph = Glyphs.For(s), Children = s.Children.Count > 0 ? From(s.Children) : [] })];
+
+    /// <summary>These slices and every group's children (for loading and releasing app icons).</summary>
+    public static IEnumerable<SliceDef> Flatten(IEnumerable<SliceDef> slices)
+    {
+        foreach (var s in slices)
+        {
+            yield return s;
+            foreach (var c in s.Children) yield return c;
+        }
+    }
 
     public static SliceDef Item(string label, string detail, char glyph, Action run, bool keepOpen = false) =>
         new() { Def = new Slice(SliceKind.Tool, label, detail, null), Glyph = glyph, OnRun = run, KeepOpen = keepOpen };
@@ -36,6 +49,14 @@ internal sealed unsafe class SliceDef
 }
 
 /// <summary>A generated wheel shown in place of the current one (Files ▸ Convert ▸ …). Backspace/Esc goes back.</summary>
+/// <summary>One configured wheel as the daemon holds it.</summary>
+internal sealed class WheelSet(string name, string? hotkey, SliceDef[] slices)
+{
+    public string Name { get; } = name;
+    public string? Hotkey { get; } = hotkey;
+    public SliceDef[] Slices { get; } = slices;
+}
+
 internal sealed class SubWheel(string title, SliceDef[] items)
 {
     public string Title { get; } = title;

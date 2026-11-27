@@ -68,14 +68,17 @@ public sealed partial class GeneralPage : UserControl
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Reset the wheel?",
-            Content = "Your slices are replaced by Spoke's starter wheel. This can't be undone from Settings.",
+            Title = "Reset wheels?",
+            Content = (Store.Config?.Wheels?.Count ?? 1) > 1
+                ? $"Your {Store.Config!.Wheels!.Count} wheels are replaced by Spoke's starter wheel. Export any you want to keep first (Wheels → ⋯ → Export). This can't be undone from Settings."
+                : "Your slices are replaced by Spoke's starter wheel. This can't be undone from Settings.",
             PrimaryButtonText = "Reset",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         Store.ResetWheel();
+        Store.WheelIndex = 0;
         await Store.SaveAsync();
         _main.RefreshPages();
     }

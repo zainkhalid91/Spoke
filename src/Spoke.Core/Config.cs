@@ -23,19 +23,21 @@ public sealed class SpokeConfig
     public string? Size { get; set; }
     /// <summary>How Files, Text tools, Generate and System show their options: ring (an outer band, default) | wheel (a new wheel).</summary>
     public string? SubMenus { get; set; }
-    /// <summary>Wheels. M1 uses the first one; more wheels and the wheel row arrive in M3.</summary>
+    /// <summary>Wheels. The first opens with "hotkey"; each can have its own. Tab switches between them while one is open.</summary>
     public List<WheelConfig>? Wheels { get; set; }
 }
 
 public sealed class WheelConfig
 {
     public string? Name { get; set; }
+    /// <summary>Opens this wheel directly. The first wheel uses the top-level "hotkey" when this is left out.</summary>
+    public string? Hotkey { get; set; }
     public List<SliceConfig>? Slices { get; set; }
 }
 
 public sealed class SliceConfig
 {
-    /// <summary>tool | app | url | folder | search | text</summary>
+    /// <summary>tool | app | url | folder | search | text | group</summary>
     public string? Type { get; set; }
     public string? Label { get; set; }
     /// <summary>Second line in the hub. Derived from the action when left out.</summary>
@@ -59,6 +61,13 @@ public sealed class SliceConfig
     public string? Engine { get; set; }
     /// <summary>text: what to type. Tokens: {date} {time} {iso} {unix} {uuid} {clipboard} {date:format}.</summary>
     public string? Text { get; set; }
+
+    /// <summary>group: up to 12 slices that fan out around this one (or open as a wheel).</summary>
+    public List<SliceConfig>? Children { get; set; }
+    /// <summary>group: run every child in order instead of choosing one (apps, websites, folders and text only).</summary>
+    public bool? RunAll { get; set; }
+    /// <summary>group with runAll: milliseconds to wait between children (0–10000, default 300).</summary>
+    public int? Delay { get; set; }
 }
 
 [JsonSourceGenerationOptions(
@@ -69,11 +78,12 @@ public sealed class SliceConfig
     PropertyNameCaseInsensitive = true,
     WriteIndented = true)]
 [JsonSerializable(typeof(SpokeConfig))]
+[JsonSerializable(typeof(SpokeFile))]
 internal sealed partial class ConfigJson : JsonSerializerContext;
 
 // ───────────────────────── what the daemon runs ─────────────────────────
 
-public enum SliceKind { Tool, App, Url, Folder, Search, Text }
+public enum SliceKind { Tool, App, Url, Folder, Search, Text, Group }
 public enum ToolKind { None, Screenshot, ColorPicker, Clips, Files, TextTools, Generate, System }
 public enum FolderOpen { Explorer, Terminal, CopyPath }
 
@@ -90,7 +100,17 @@ public sealed record Slice(
     string Browser = "",
     FolderOpen Open = FolderOpen.Explorer,
     string SearchTemplate = "",
-    string Text = "");
+    string Text = "")
+{
+    /// <summary>Group: the slices it holds.</summary>
+    public IReadOnlyList<Slice> Children { get; init; } = [];
+    /// <summary>Group: run all children in order, <see cref="DelayMs"/> apart.</summary>
+    public bool RunAll { get; init; }
+    public int DelayMs { get; init; }
+}
+
+/// <summary>A validated wheel. <see cref="Hotkey"/> is null when it has no shortcut of its own.</summary>
+public sealed record WheelDef(string Name, string? Hotkey, IReadOnlyList<Slice> Slices);
 
 public sealed record ConfigResult(
     SpokeConfig? Config,
@@ -99,6 +119,9 @@ public sealed record ConfigResult(
     IReadOnlyList<string> Errors,
     bool UsedDefaultWheel)
 {
+    /// <summary>Every wheel, the first being <see cref="WheelName"/>/<see cref="Slices"/>.</summary>
+    public IReadOnlyList<WheelDef> Wheels { get; init; } = [];
+
     /// <summary>Theme, colours and size (defaults when the file couldn't be read).</summary>
     public Appearance Appearance { get; init; } = Appearance.Default;
 
@@ -107,7 +130,7 @@ public sealed record ConfigResult(
 
 public static class ConfigLoader
 {
-    public const int MinSlices = 2, MaxSlices = 12;
+    public const int MinSlices = 2, MaxSlices = 12, MaxWheels = 20, MaxChildren = 12, MaxDelay = 10_000;
 
     /// <summary>The wheel a fresh install gets: every kind of action once.</summary>
     public static WheelConfig DefaultWheel() => new()
@@ -133,7 +156,7 @@ public static class ConfigLoader
     public static SpokeConfig Default() => new() { Wheels = [DefaultWheel()] };
 
     // Hand-edited file: write apostrophes, accents and the like as themselves, not as ' escapes.
-    private static readonly JsonSerializerOptions WriteOptions = new(ConfigJson.Default.Options)
+    internal static readonly JsonSerializerOptions WriteOptions = new(ConfigJson.Default.Options)
     {
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
@@ -162,24 +185,48 @@ public static class ConfigLoader
             errors.Add($"\"hotkey\": \"{hk}\" is not a shortcut Spoke understands (try \"Ctrl+Alt+Space\").");
 
         bool usedDefault = c.Wheels is not { Count: > 0 } || c.Wheels[0].Slices is null;
-        var wheel = usedDefault ? DefaultWheel() : c.Wheels![0];
-        var list = wheel.Slices!;
-        if (list.Count is < MinSlices or > MaxSlices)
-            errors.Add($"A wheel needs {MinSlices}–{MaxSlices} slices; this one has {list.Count}.");
+        List<WheelConfig> configs = usedDefault ? [DefaultWheel(), .. (c.Wheels ?? []).Skip(1)] : c.Wheels!;
+        if (configs.Count > MaxWheels) errors.Add($"Spoke holds up to {MaxWheels} wheels; this file has {configs.Count}.");
 
-        var slices = new List<Slice>(list.Count);
-        for (int i = 0; i < list.Count; i++)
+        var wheels = new List<WheelDef>(configs.Count);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var keys = new Dictionary<Hotkey, string>();
+        for (int w = 0; w < Math.Min(configs.Count, MaxWheels); w++)
         {
-            var s = Resolve(list[i], out string? error);
-            if (error != null) errors.Add($"Slice {i + 1}{(list[i]?.Label is { Length: > 0 } lb ? $" ({lb})" : "")}: {error}");
-            else slices.Add(s!);
+            var wheel = configs[w] ?? new WheelConfig();
+            string name = string.IsNullOrWhiteSpace(wheel.Name) ? (w == 0 ? "Spoke" : $"Wheel {w + 1}") : wheel.Name.Trim();
+            // Errors name the wheel only when there's more than one, so a one-wheel file reads as before.
+            string where = configs.Count > 1 ? $"Wheel {w + 1} ({name}): " : "";
+            if (!names.Add(name)) errors.Add($"{where}another wheel is already called \"{name}\"; give each wheel its own name.");
+
+            if (Trimmed(wheel.Hotkey) is { } own && !Spoke.Core.Hotkey.TryParse(own, out _))
+                errors.Add($"{where}\"hotkey\": \"{own}\" is not a shortcut Spoke understands (try \"Ctrl+Alt+1\").");
+            string? hotkey = Trimmed(wheel.Hotkey) ?? (w == 0 ? Trimmed(c.Hotkey) : null);
+            if (hotkey != null && Spoke.Core.Hotkey.TryParse(hotkey, out var parsed))
+            {
+                if (keys.TryGetValue(parsed, out var other)) errors.Add($"{where}{parsed} already opens \"{other}\"; each wheel needs its own shortcut.");
+                else keys[parsed] = name;
+            }
+
+            var list = wheel.Slices ?? [];
+            if (list.Count is < MinSlices or > MaxSlices)
+                errors.Add($"{where}A wheel needs {MinSlices}–{MaxSlices} slices; this one has {list.Count}.");
+            var slices = new List<Slice>(list.Count);
+            for (int i = 0; i < list.Count; i++)
+            {
+                var s = Resolve(list[i], out string? error);
+                if (error != null) errors.Add($"{where}Slice {i + 1}{(list[i]?.Label is { Length: > 0 } lb ? $" ({lb})" : "")}: {error}");
+                else slices.Add(s!);
+            }
+            wheels.Add(new WheelDef(name, hotkey, slices));
         }
-        string name = string.IsNullOrWhiteSpace(wheel.Name) ? "Spoke" : wheel.Name.Trim();
         var look = Appearance.From(c, errors);
-        return new(c, name, slices, errors, usedDefault) { Appearance = look };
+        return new(c, wheels[0].Name, wheels[0].Slices, errors, usedDefault) { Appearance = look, Wheels = wheels };
     }
 
-    public static Slice? Resolve(SliceConfig? s, out string? error)
+    public static Slice? Resolve(SliceConfig? s, out string? error) => Resolve(s, nested: false, out error);
+
+    private static Slice? Resolve(SliceConfig? s, bool nested, out string? error)
     {
         error = null;
         if (s == null) { error = "is empty."; return null; }
@@ -261,11 +308,35 @@ public static class ConfigLoader
                 return new(SliceKind.Text, label ?? "Snippet", detail ?? Preview(s.Text), icon, Text: s.Text);
             }
 
+            case "group" or "more":
+            {
+                if (nested) { error = "a group can't hold another group."; return null; }
+                var kids = s.Children ?? [];
+                if (kids.Count is < 1 or > MaxChildren) { error = $"a group needs 1–{MaxChildren} \"children\"; this one has {kids.Count}."; return null; }
+                bool all = s.RunAll == true;
+                int delay = s.Delay ?? 300;
+                if (delay is < 0 or > MaxDelay) { error = $"\"delay\" must be 0–{MaxDelay} milliseconds."; return null; }
+                var children = new List<Slice>(kids.Count);
+                for (int i = 0; i < kids.Count; i++)
+                {
+                    var child = Resolve(kids[i], nested: true, out string? e);
+                    if (e != null) { error = $"child {i + 1}{(kids[i]?.Label is { Length: > 0 } lb ? $" ({lb})" : "")}: {e}"; return null; }
+                    if (all && child!.Kind is SliceKind.Tool or SliceKind.Search)
+                    {
+                        error = $"child {i + 1} ({child.Label}): \"runAll\" runs apps, websites, folders and text; tools and searches need you to choose.";
+                        return null;
+                    }
+                    children.Add(child!);
+                }
+                string d = all ? $"Runs {children.Count} in a row" : Preview(string.Join(" · ", children.Select(k => k.Label)));
+                return new Slice(SliceKind.Group, label ?? "Group", detail ?? d, icon) { Children = children, RunAll = all, DelayMs = all ? delay : 0 };
+            }
+
             case "":
-                error = "\"type\" is missing (tool, app, url, folder, search or text).";
+                error = "\"type\" is missing (tool, app, url, folder, search, text or group).";
                 return null;
             default:
-                error = $"\"type\": \"{s.Type}\" is unknown (use tool, app, url, folder, search or text).";
+                error = $"\"type\": \"{s.Type}\" is unknown (use tool, app, url, folder, search, text or group).";
                 return null;
         }
     }
@@ -419,6 +490,7 @@ public static class Glyphs
             SliceKind.Url => '\uE774',
             SliceKind.Folder => s.Open == FolderOpen.Terminal ? '\uE756' : s.Open == FolderOpen.CopyPath ? '\uE8C8' : '\uE8B7',
             SliceKind.Search => '\uE721',
+            SliceKind.Group => s.RunAll ? '\uE768' : '\uE8FD',
             _ => '\uE8D2',
         };
     }

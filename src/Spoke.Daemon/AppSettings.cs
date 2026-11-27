@@ -76,7 +76,8 @@ internal sealed unsafe partial class App
             }
             case "preview":
                 if (_paused) return Status(false, "Spoke is paused. Resume it from the tray icon to see the wheel.");
-                Open(Stopwatch.GetTimestamp());
+                if (IsOpen) Close();
+                Open(Stopwatch.GetTimestamp(), wheel: int.TryParse(r.Arg, out int w) ? w : 0);
                 return Status(true);
             case "autostart":
             {
@@ -97,6 +98,7 @@ internal sealed unsafe partial class App
         Autostart = Autostart.IsEnabled,
         Errors = [.. _configErrors],
         Slices = _settings.Current.Slices.Count,
+        Wheels = _wheelSets.Count,
         Pid = Environment.ProcessId,
     };
 }
