@@ -13,7 +13,7 @@ flowchart TD
   D -->|picked| E[Choose a starter wheel<br/>Dev · Browser · Writing · Media · Blank]
   E --> F[Start with Windows? toggle<br/>Clipboard history? toggle, off by default]
   F --> G[Done<br/>tray tip: 'Spoke lives here']
-  G --> H[(Daemon running, trial day 1 of 7)]
+  G --> H[(Daemon running)]
   D -->|skip| E
 ```
 
@@ -117,7 +117,6 @@ flowchart LR
   S --> CL[Clipboard]
   S --> GA[Gallery]
   S --> GE[General]
-  S --> LI[License]
   W --> W1[Wheel list: add · duplicate · export · import · delete]
   W --> W2[Live preview: drag slices to reorder,<br/>drop apps/files/URLs onto it]
   W --> W3[Slice inspector: type · target · label · icon · colour · sub-actions · run-all]
@@ -130,26 +129,3 @@ flowchart LR
   W2 -. saves .-> CFG[(settings.json)] -. pipe 'reload' .-> D[Daemon applies < 200 ms]
 ```
 
-## 8. Trial and purchase
-
-```mermaid
-stateDiagram-v2
-  [*] --> Trial: first run (7 days, full features)
-  Trial --> Trial: day 5 & 6: one gentle tray notice
-  Trial --> Expired: day 8
-  Trial --> Licensed: buy any time
-  Expired --> Paywall: any trigger
-  note right of Paywall
-    Wheel opens, slices greyed
-    Hub: "Trial ended"
-    Two slices: Buy · Enter key
-    Settings and wheels kept
-  end note
-  Paywall --> Store: Buy (Store build → Store add-on dialog)
-  Paywall --> Checkout: Buy (direct build → browser checkout)
-  Checkout --> KeyEntry: email delivers key
-  Paywall --> KeyEntry: Enter key
-  Store --> Licensed
-  KeyEntry --> Licensed: offline signature check (Ed25519)
-  Licensed --> [*]
-```

@@ -24,7 +24,7 @@ Estimates assume one developer working with Claude, full days. Each milestone en
 | M10 | Video | ffmpeg LGPL bundle, probe, MP4/WebM/MOV/MKV/GIF, mute, replace/add audio, extract MP3/AAC/WAV, progress + cancel. Explorer *Convert with Spoke…* | 5 days | Cancel leaves no partial files. The LGPL notice and an ffmpeg build-config check are in CI. |
 | **— Phase 4 done (≈ 2 weeks) —** ||||
 | M11 | Polish | Onboarding (4 steps), Appearance, Sounds, accessibility (Narrator, high contrast, reduced motion), crash log + watchdog. | 5 days | First-run test with someone new to the app, finished in < 90 s. |
-| M12 | Ship | Licensing (Store add-ons + offline Ed25519 keys), MSIX + signing, winget manifest, Store listing assets, portable zip. | 5 days | Clean install/uninstall on a fresh Windows 11 VM. Trial expiry tested by changing the clock. |
+| M12 | Ship | MSIX + signing, winget manifest, Store listing assets, portable zip. | 5 days | Clean install/uninstall on a fresh Windows 11 VM. |
 | **— Phase 5 done (≈ 2 weeks) —** ||||
 
 **Total ≈ 11–12 weeks** to a store-ready v1. Phase 1 (usable daily driver) lands in about 2.5 weeks.

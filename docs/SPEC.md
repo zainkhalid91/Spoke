@@ -108,7 +108,7 @@ Each feature has **done criteria**. A feature is done only when every criterion 
 | Onboarding | First run: pick a hotkey (with a conflict check), try the wheel on a practice screen, choose a starter wheel, set autostart. Takes under 90 seconds. |
 | Appearance | Size (S/M/L/custom), slice count, accent, opacity, blur behind (on/off), animation (none/subtle/springy), icon style (app icons or mono glyphs), hub style. |
 | Sounds | Themes: Off (default), Soft Click, Mechanical, Glass. Volume control. Sounds on open, hover, select and error. Short WAVs held in memory. |
-| Licensing | 7-day full trial, then a lifetime licence or a weekly plan. Store build uses Store add-ons; direct build uses signed offline licence keys. After the trial, triggers pause and the wheel shows *Buy* / *Enter key*. Settings stay. |
+| Licence | Free and open source under the MIT licence. No trial, account or licence key. |
 | Packaging | Signed MSIX for the Store and winget, plus a signed zip/MSI for direct download. Auto-update: the Store handles it for the Store build; the direct build checks once a day *only if the user allows it*. |
 | Accessibility | High-contrast theme respected, Narrator announces the hovered slice, reduced-motion respected, everything reachable by keyboard. |
 | Crash safety | Unhandled errors write a local log. A watchdog restarts the daemon once. Nothing is sent anywhere. |
@@ -122,6 +122,4 @@ Each feature has **done criteria**. A feature is done only when every criterion 
 - Windows 10 support (decide after the spike. The code paths exist on 10 but aren't tested.)
 
 ## 6. Open decisions for later phases
-1. **Payments for the direct build:** Paddle, Lemon Squeezy or Store-only. (Phase 5.)
-2. **Weekly plan pricing** next to the lifetime price. (Phase 5.)
-3. **Default hotkey:** Ctrl+Alt+Space for now. Onboarding asks anyway.
+1. **Default hotkey:** Ctrl+Alt+Space for now. Onboarding asks anyway.

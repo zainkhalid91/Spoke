@@ -2,7 +2,7 @@
 
 A radial command wheel for Windows. Press a shortcut, and a wheel of your apps, sites, folders, snippets and tools opens around the pointer. Point, click, done.
 
-Native and tiny: C# / .NET 10 Native AOT, Direct2D + DirectComposition overlay, under 30 ms to open, under 40 MB idle.
+Native and tiny: C# / .NET 10 Native AOT, Direct2D + DirectComposition overlay, under 30 ms to open, under 40 MB idle. Free and open source ([MIT](LICENSE)).
 
 ![Spoke in its four themes: Aurora, Ember, Paper and Graphite](docs/themes.png)
 
@@ -22,7 +22,10 @@ Open the wheel with **Ctrl+Alt+Z**. Choose a slice on the ring or press 1–8; a
 
 **M3** adds **many wheels**: give each its own shortcut (Settings → Wheels), and press **Tab** / Shift+Tab or click a pill under the wheel to switch in place. **Group** slices hold up to 12 items that fan out around the slice, or with *Run every item* switched on (`"runAll": true`, `"delay": 500`) run them in order. Wheels export to and import from `.spoke` files (Settings → Wheels → ⋯, or `Start-Process -Wait Spoke.exe "--export Dev dev.spoke"` / `--import dev.spoke`); paths under your user folders become `%ENV%` forms. Icons keep the theme's colours; a Windows or custom accent only colours the highlight.
 
+<img src="docs/drop-mode.png" width="360" align="right" alt="The drop mode wheel with an estimated output size on every format" />
+
 **Drop mode** converts files by dragging them. Drag images from File Explorer, keep holding the mouse button, press the wheel shortcut, and the wheel opens under the pointer as a format wheel: PNG, JPEG, WebP, AVIF, HEIC, GIF, TIFF, BMP, Resize ▸ and Compress. Each slice shows the **estimated size** before you drop. A worker process encodes full-resolution tiles sampled from across the picture and scales the result up; across test photos and screenshots the average error is 5%. Drop on a slice to convert beside the original (never overwriting); hover Resize for a moment, or drop on it, to pick a size. Several files convert as a batch. Other files (PDFs, Office documents) get the Files actions instead. WebP and AVIF use `ffmpeg` on PATH. HEIC needs Microsoft's HEIF and HEVC extensions; without them the slice says so. Esc closes the wheel and the drag carries on. `Spoke.exe --estimate-check report.txt image…` compares estimates with real conversions, and `--render out.png --drop image` draws the format wheel.
+<br clear="right" />
 
 **More options as an outer ring:** Files, Text tools, Generate and System open their options as a band that fans out around the slice, so the wheel stays in view (hub shows the path, e.g. *Files ▸ Convert*; Esc or the hub goes back, the slice again folds it, arrows/digits/Enter work too). Prefer the old way? Settings → Appearance → *More options*, or `"subMenus": "wheel"`. `Spoke.exe --render out.png [--theme Onyx] [--ring 3]` draws the wheel to a PNG without showing anything.
 
@@ -62,3 +65,7 @@ dotnet publish src/Spoke.Daemon -c Release -r win-x64 -o publish/m2
 dotnet publish src/Spoke.Settings -c Release -o publish/m2   # SpokeSettings.exe must sit next to Spoke.exe
 publish/m2/Spoke.exe --bench 100 --label my-run   # latency/focus report in %LOCALAPPDATA%\Spoke
 ```
+
+## License
+
+Spoke is free and open source under the [MIT licence](LICENSE). Third-party code and its licences are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Issues and pull requests are welcome.

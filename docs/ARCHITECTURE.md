@@ -16,7 +16,7 @@
 | Clipboard store | **SQLite** (Microsoft.Data.Sqlite + e_sqlite3, AOT-ok) in `%LOCALAPPDATA%\Spoke\clips.db`. Each row is encrypted with **AES-GCM**, and the 256-bit key is wrapped with **DPAPI (CurrentUser)** | Per-row AES is fast. DPAPI ties the key to the Windows account, so copying the DB to another machine or user gives you garbage. |
 | Images | **WIC**, plus bundled libwebp for WebP if the system has no WIC WebP encoder. HEIC is only offered if the HEIF Image Extensions codec is present. | Built into Windows, fast, no extra licensing. |
 | Video | **Bundled ffmpeg (LGPL build, shared libs, no GPL/non-free codecs)**, run as a child process by the worker | Proven, and keeps licensing simple. Encoders are H.264 via Media Foundation (`h264_mf`) and VP9/AV1 via libvpx/libaom (LGPL-compatible). No x264 (GPL). |
-| Packaging | **MSIX** (Store + winget), code-signed. Also a signed portable zip. | Clean install/uninstall, Store trial/add-ons, auto-update. |
+| Packaging | **MSIX** (Store + winget), code-signed. Also a signed portable zip. | Clean install/uninstall, auto-update. |
 
 ## 2. Processes
 
