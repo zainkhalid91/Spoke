@@ -20,6 +20,12 @@ internal sealed unsafe class SliceDef
     public Func<SubWheel?>? OnOpen;
     /// <summary>Stay open after running (volume steps), so it can be chosen again.</summary>
     public bool KeepOpen;
+    /// <summary>Drop mode: the output this item makes ("png", "compress"…), for matching size estimates to it.</summary>
+    public string? Key;
+    /// <summary>A short second line under the label (drop mode: "≈ 1.4 MB"); null = none.</summary>
+    public string? Badge;
+    /// <summary>Drop mode: this PC can't make that output (no encoder); dropping on it explains why.</summary>
+    public bool Unavailable;
 
     public string Label => Def.Label;
     public string Detail => Def.Detail;

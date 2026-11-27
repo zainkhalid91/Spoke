@@ -186,9 +186,15 @@ internal sealed unsafe partial class App
             Notify("No files selected", "Select files in File Explorer (or on the desktop), or copy them with Ctrl+C, then open Files again.", true);
             return null;
         }
+        Log.Write($"Files: {files.Length} from {source} ({FileKinds.Common(files)})");
+        return FilesWheelFor(files);
+    }
+
+    /// <summary>What can be done with these files (also drop mode's wheel for anything that isn't images).</summary>
+    private SubWheel FilesWheelFor(string[] files)
+    {
         var kind = FileKinds.Common(files);
         string title = files.Length == 1 ? Ellipsize(Path.GetFileName(files[0]), 22) : $"{files.Length} {FileKinds.Noun(kind, files.Length)}";
-        Log.Write($"Files: {files.Length} from {source} ({kind})");
         var items = new List<SliceDef>();
 
         if (kind == FileKind.Image)
@@ -258,7 +264,14 @@ internal sealed unsafe partial class App
             ("1920w", "1920 wide", "Full HD width"), ("1280w", "1280 wide", "HD width"), ("800w", "800 wide", "Web, email"),
             ("512", "512 px", "Long side, thumbnails"),
         ];
-        return new SubWheel("Resize", [.. sizes.Select(s => SliceDef.Item(s.Label, s.Detail, '', () => Job("resize", s.Spec, files, $"Resized to {s.Label}")))]);
+        return new SubWheel("Resize", [.. sizes.Select(s =>
+        {
+            var item = SliceDef.Item(s.Label, s.Detail, '', () => Job("resize", s.Spec, files, $"Resized to {s.Label}"));
+            // Drop mode knows the picture's size by now: show what each choice gives.
+            if (_view.Drop && _dropSize.W > 0)
+                item.Badge = ResizeSpec.Target(s.Spec, _dropSize.W, _dropSize.H) is { } t ? $"{t.W} × {t.H}" : "already smaller";
+            return item;
+        })]);
     }
 
     private void Job(string op, string arg, IReadOnlyList<string> files, string what) =>

@@ -21,6 +21,20 @@ internal sealed unsafe partial class Imaging
         _ => null,
     };
 
+    /// <summary>Whether WIC has an encoder for this container (HEIF: only with the HEIF Image Extensions).</summary>
+    public static bool HasEncoder(Guid container)
+    {
+        try
+        {
+            var img = new Imaging();
+            IWICBitmapEncoder* enc = null;
+            try { enc = img._wic->CreateEncoder(&container, null); return true; }
+            catch (COMException) { return false; }
+            finally { Gfx.Release(enc); }
+        }
+        catch (COMException) { return false; }
+    }
+
     public static string ExtOf(ImageFormat f) => f switch
     {
         ImageFormat.Jpeg => "jpg", ImageFormat.Tiff => "tif", _ => f.ToString().ToLowerInvariant(),

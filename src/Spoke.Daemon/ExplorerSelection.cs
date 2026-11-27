@@ -24,7 +24,8 @@ internal static unsafe class ExplorerSelection
         [FieldOffset(8)] public int I4;
     }
 
-    public static string[] Get(HWND foreground, HWND clipboardOwner, out string source)
+    /// <param name="clipboard">Fall back to files copied with Ctrl+C (not for drop mode: a drag isn't the clipboard).</param>
+    public static string[] Get(HWND foreground, HWND clipboardOwner, out string source, bool clipboard = true)
     {
         source = "";
         try
@@ -45,6 +46,7 @@ internal static unsafe class ExplorerSelection
         {
             Log.Write("Explorer selection failed: " + ex.Message);
         }
+        if (!clipboard) return [];
         var copied = ClipboardIO.GetFiles(clipboardOwner);
         if (copied.Length > 0) source = "clipboard";
         return copied;

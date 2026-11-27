@@ -47,7 +47,7 @@ public static class FileKinds
 /// <summary>A conversion job, written by the daemon and run by <c>Spoke.exe --worker job.json</c>.</summary>
 public sealed class FileJob
 {
-    /// <summary>convert | resize | compress | strip | combinePdf | office</summary>
+    /// <summary>convert | resize | compress | strip | combinePdf | office | estimate</summary>
     public string Op { get; set; } = "";
     /// <summary>convert/office: target extension without dot (png, jpg, pdf, docx…). resize: "50%" or "1280w".</summary>
     public string Arg { get; set; } = "";
@@ -62,6 +62,11 @@ public sealed class FileJobResult
     public List<string> Errors { get; set; } = [];
     public long BytesIn { get; set; }
     public long BytesOut { get; set; }
+    /// <summary>estimate: bytes per output ("png", "jpg", …, "compress"); -1 = this PC can't write it.</summary>
+    public Dictionary<string, long> Estimates { get; set; } = [];
+    /// <summary>estimate: the first image's size, upright.</summary>
+    public int Width { get; set; }
+    public int Height { get; set; }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]

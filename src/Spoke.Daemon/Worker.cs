@@ -68,6 +68,11 @@ internal static unsafe class Worker
             CombinePdf(img.Value, job.Inputs, r);
             return;
         }
+        if (job.Op == "estimate")
+        {
+            Estimate(img.Value, job, r);
+            return;
+        }
         foreach (string input in job.Inputs)
         {
             try
@@ -220,6 +225,155 @@ internal static unsafe class Worker
         }
     }
 
+    // ───────────────────────── size estimates (drop mode) ─────────────────────────
+
+    /// <summary>Files sampled for a batch estimate; the rest are assumed alike (by bytes on disk).</summary>
+    private const int EstimateSampleFiles = 3;
+
+    /// <summary>
+    /// Estimated output size per format for <c>job.Inputs</c> (<c>job.Arg</c> = "png,jpg,webp,…,compress").
+    /// Same encoder settings as the real conversion, on a tile mosaic (see <see cref="SizeEstimate"/>).
+    /// </summary>
+    private static void Estimate(Imaging img, FileJob job, FileJobResult r)
+    {
+        var wanted = job.Arg.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var totals = wanted.ToDictionary(w => w, _ => 0L);
+        var unavailable = new HashSet<string>();
+        long allBytes = job.Inputs.Sum(f => new FileInfo(f).Length), sampledBytes = 0;
+        foreach (string input in job.Inputs.Take(EstimateSampleFiles))
+        {
+            Pixels px;
+            try { px = img.LoadUpright(input); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                r.Errors.Add($"{Path.GetFileName(input)}: {Friendly(ex)}");
+                continue;
+            }
+            if (sampledBytes == 0) { r.Width = px.Width; r.Height = px.Height; }
+            sampledBytes += new FileInfo(input).Length;
+            foreach (var (fmt, bytes) in EstimateOne(img, px, wanted.Where(w => !unavailable.Contains(w)).ToArray()))
+            {
+                if (bytes < 0) unavailable.Add(fmt);
+                else totals[fmt] += bytes;
+            }
+        }
+        if (sampledBytes == 0) return;
+        foreach (string w in wanted)
+            r.Estimates[w] = unavailable.Contains(w) ? -1 : SizeEstimate.ForAll(totals[w], sampledBytes, allBytes);
+    }
+
+    /// <summary>One image: (format, estimated bytes), or -1 bytes when this PC has no encoder for it.</summary>
+    public static List<(string Fmt, long Bytes)> EstimateOne(Imaging img, Pixels px, IEnumerable<string> formats)
+    {
+        long full = (long)px.Width * px.Height;
+        var plan = SizeEstimate.Sample(px.Width, px.Height);
+        var sample = plan == null ? px : Mosaic(px, plan);
+        long sampled = (long)sample.Width * sample.Height;
+        Pixels? codecSample = null;
+        var list = new List<(string, long)>();
+        foreach (string w in formats)
+        {
+            long bytes;
+            try
+            {
+                if (w == "bmp") bytes = SizeEstimate.Bmp(px.Width, px.Height);
+                else if (w == "compress")
+                {
+                    // As Compress does: JPEG 75%, brought down to 4K on the long side first.
+                    long target = Math.Max(px.Width, px.Height) > 3840 && ResizeSpec.Target("3840", px.Width, px.Height) is { } t ? (long)t.W * t.H : full;
+                    bytes = SizeEstimate.Scale(img.Encode(sample, ImageFormat.Jpeg, 0.75f).Length, sampled, target);
+                }
+                else
+                {
+                    var fmt = Imaging.FormatOf(w) ?? throw new NotSupportedException(w);
+                    var src = sample;
+                    if (fmt is ImageFormat.WebP or ImageFormat.Avif && plan != null)
+                        src = codecSample ??= Mosaic(px, SizeEstimate.Sample(px.Width, px.Height, SizeEstimate.CodecTile, SizeEstimate.CodecGridMax)!);
+                    bytes = SizeEstimate.Scale(EncodedLength(img, src, fmt), (long)src.Width * src.Height, full, SizeEstimate.Overhead(w));
+                }
+            }
+            catch (Exception ex) when (ex is NotSupportedException or System.Runtime.InteropServices.COMException or IOException or TimeoutException)
+            {
+                Log.Write($"[worker] no estimate for {w}: {ex.Message}");
+                bytes = -1;
+            }
+            list.Add((w, bytes));
+        }
+        return list;
+    }
+
+    private static long EncodedLength(Imaging img, Pixels px, ImageFormat fmt)
+    {
+        if (fmt is not (ImageFormat.WebP or ImageFormat.Avif)) return img.Encode(px, fmt).Length;
+        string tmp = Path.Combine(Path.GetTempPath(), "Spoke", Guid.NewGuid().ToString("N") + "." + Imaging.ExtOf(fmt));
+        try
+        {
+            Ffmpeg(img, px, tmp, fmt);
+            return new FileInfo(tmp).Length;
+        }
+        finally { if (File.Exists(tmp)) File.Delete(tmp); }
+    }
+
+    /// <summary>The planned tiles copied side by side into one picture.</summary>
+    private static Pixels Mosaic(Pixels px, SizeEstimate.Plan plan)
+    {
+        int w = plan.MosaicW, h = plan.MosaicH, rowBytes = plan.TileW * 4;
+        var data = GC.AllocateUninitializedArray<byte>(w * h * 4);
+        for (int i = 0; i < plan.Origins.Length; i++)
+        {
+            var (ox, oy) = plan.Origins[i];
+            int dx = i % plan.Cols * plan.TileW, dy = i / plan.Cols * plan.TileH;
+            for (int y = 0; y < plan.TileH; y++)
+                px.Data.AsSpan((oy + y) * px.Stride + ox * 4, rowBytes).CopyTo(data.AsSpan(((dy + y) * w + dx) * 4));
+        }
+        return new Pixels { Width = w, Height = h, Data = data };
+    }
+
+    /// <summary>
+    /// <c>Spoke.exe --estimate-check report.txt image…</c>: estimates every format, then converts for real and
+    /// writes estimate vs actual (the drop-mode accuracy check). Nothing is saved beside the images.
+    /// </summary>
+    public static int EstimateCheck(string report, IEnumerable<string> files)
+    {
+        PInvoke.CoInitializeEx(null, COINIT.COINIT_APARTMENTTHREADED);
+        var img = new Imaging();
+        string[] formats = ["png", "jpg", "webp", "avif", "heic", "gif", "tif", "bmp", "compress"];
+        var sb = new System.Text.StringBuilder();
+        var errors = new List<double>();
+        foreach (string f in files)
+        {
+            var px = img.LoadUpright(f);
+            long t0 = Stopwatch.GetTimestamp();
+            var est = EstimateOne(img, px, formats);
+            double ms = Log.Ms(t0, Stopwatch.GetTimestamp());
+            sb.AppendLine($"{Path.GetFileName(f)}  {px.Width}x{px.Height}  {OutputNames.Size(new FileInfo(f).Length)}  (estimate took {ms:F0} ms)");
+            foreach (var (w, e) in est)
+            {
+                long actual;
+                long t1 = Stopwatch.GetTimestamp();
+                try
+                {
+                    if (w == "compress")
+                    {
+                        var p2 = px;
+                        if (Math.Max(px.Width, px.Height) > 3840 && ResizeSpec.Target("3840", px.Width, px.Height) is { } t) p2 = img.Resize(px, t.W, t.H);
+                        actual = img.Encode(p2, ImageFormat.Jpeg, 0.75f).Length;
+                    }
+                    else actual = EncodedLength(img, px, Imaging.FormatOf(w)!.Value);
+                }
+                catch (Exception ex) when (ex is NotSupportedException or System.Runtime.InteropServices.COMException or IOException) { actual = -1; }
+                double conv = Log.Ms(t1, Stopwatch.GetTimestamp());
+                double err = e > 0 && actual > 0 ? (e - actual) * 100.0 / actual : double.NaN;
+                if (!double.IsNaN(err)) errors.Add(Math.Abs(err));
+                sb.AppendLine($"  {w,-9} est {(e < 0 ? "n/a" : OutputNames.Size(e)),10}   actual {(actual < 0 ? "n/a" : OutputNames.Size(actual)),10}   {(double.IsNaN(err) ? "" : $"{err:+0.0;-0.0}%"),7}   (convert {conv:F0} ms)");
+            }
+        }
+        if (errors.Count > 0)
+            sb.AppendLine($"\n{errors.Count} estimates: mean |error| {errors.Average():F1}%, worst {errors.Max():F1}%, within 25%: {errors.Count(e => e <= 25)}/{errors.Count}");
+        File.WriteAllText(report, sb.ToString());
+        return 0;
+    }
+
     private static void Ffmpeg(Imaging img, Pixels px, string output, ImageFormat fmt)
     {
         string ff = FfmpegPath ?? throw new NotSupportedException("WebP and AVIF need ffmpeg on PATH.");
@@ -233,7 +387,8 @@ internal static unsafe class Worker
             foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-y", "-i", tmpPng }) psi.ArgumentList.Add(a);
             string[] codec = fmt == ImageFormat.WebP
                 ? ["-c:v", "libwebp", "-quality", "88", "-frames:v", "1"]
-                : ["-c:v", "libaom-av1", "-still-picture", "1", "-crf", "30", "-b:v", "0", "-pix_fmt", "yuv420p", "-frames:v", "1"];
+                // cpu-used 6: libaom's default (1) takes minutes on a 12 MP photo for a file barely smaller.
+                : ["-c:v", "libaom-av1", "-still-picture", "1", "-crf", "30", "-b:v", "0", "-cpu-used", "6", "-row-mt", "1", "-pix_fmt", "yuv420p", "-frames:v", "1"];
             foreach (var a in codec) psi.ArgumentList.Add(a);
             psi.ArgumentList.Add(tmpOut);
             using var p = Process.Start(psi)!;
@@ -257,6 +412,40 @@ internal static class FileJobs
     {
         var thread = new Thread(() => RunJob(job, what, notify)) { IsBackground = true, Name = "Spoke file job" };
         thread.Start();
+    }
+
+    /// <summary>
+    /// Runs a job in a worker and returns its result, or null if it failed, timed out or was killed (through the
+    /// process handed to <paramref name="started"/>). Blocks: call it off the UI thread.
+    /// </summary>
+    public static FileJobResult? RunForResult(FileJob job, int timeoutMs, Action<Process>? started = null)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "Spoke", "jobs");
+        Directory.CreateDirectory(dir);
+        string id = Guid.NewGuid().ToString("N");
+        string jobPath = Path.Combine(dir, id + ".json");
+        job.ResultPath = Path.Combine(dir, id + ".result.json");
+        try
+        {
+            File.WriteAllText(jobPath, JsonSerializer.Serialize(job, FileJobJson.Default.FileJob));
+            var psi = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
+            psi.ArgumentList.Add("--worker");
+            psi.ArgumentList.Add(jobPath);
+            using var p = Process.Start(psi)!;
+            started?.Invoke(p);
+            if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch (InvalidOperationException) { } return null; }
+            return p.ExitCode == 0 && File.Exists(job.ResultPath)
+                ? JsonSerializer.Deserialize(File.ReadAllText(job.ResultPath), FileJobJson.Default.FileJobResult) : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Log.Write($"[{job.Op}] {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            try { File.Delete(jobPath); File.Delete(job.ResultPath); } catch (IOException) { }
+        }
     }
 
     private static void RunJob(FileJob job, string what, Actions.NotifyFn notify)

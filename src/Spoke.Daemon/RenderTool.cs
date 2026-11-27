@@ -43,6 +43,23 @@ internal static unsafe class RenderTool
         r.SetDpi(96);
 
         var view = new WheelView { Hover = Int("--hover", -1), RowHover = Int("--row-hover", 0) - 1 };
+        if (Arg("--drop") is { } dropped)
+        {
+            // Drop mode's format wheel for this image, with real size estimates (computed here, in-process).
+            string[] files = [dropped];
+            var wheel = DropMenus.Images(files, (_, _, _, _) => { }, _ => new SubWheel("Resize", []));
+            var img = new Imaging();
+            var px = img.LoadUpright(dropped);
+            var est = Worker.EstimateOne(img, px, wheel.Items.Where(i => i.Key != null).Select(i => i.Key!)).ToDictionary(e => e.Fmt, e => e.Bytes);
+            foreach (var it in wheel.Items)
+                if (it.Key != null) it.Badge = est[it.Key] < 0 ? DropMenus.Missing(it.Key) : SizeEstimate.Label(est[it.Key]);
+            r.SetSlices(wheel.Items);
+            r.WheelName = "Drop to convert";
+            long bytes = new FileInfo(dropped).Length;
+            r.HubFrom = OutputNames.Size(bytes);
+            r.HubHint = $"{Path.GetFileName(dropped)} · {OutputNames.Size(bytes)}";
+            view.Drop = true;
+        }
         int ring = Int("--ring", -1);
         if (ring >= 0 && ring < shown.Slices.Count)
         {

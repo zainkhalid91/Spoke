@@ -134,6 +134,7 @@ internal sealed unsafe partial class App
         _icons = new IconLoader(_tray);
         _capture = new CaptureOverlay(Gfx, this, captureHwnd);
         _toast = new Toast(Gfx, this, toastHwnd);
+        Log.Write(DropTarget.Register(Overlay, this) ? "Drop target ready (drag files, then press the shortcut)" : "Drop mode unavailable (couldn't register the overlay as a drop target).");
 
         // Pre-draw once, at the likely monitor's DPI, so the first open doesn't pay lazy D2D/DWrite set-up or
         // building the cached wheel picture.
@@ -400,7 +401,7 @@ internal sealed unsafe partial class App
                 if (IsOpen && (w == _wheel || _view.Clips)) Close();
                 else if (IsOpen) SwitchWheel(w);
                 else if (_capture!.IsOpen) _capture.End();
-                else Open(Stopwatch.GetTimestamp(), wheel: w);
+                else if (!TryOpenDrop()) Open(Stopwatch.GetTimestamp(), wheel: w);
                 return true;
             }
 
@@ -466,6 +467,11 @@ internal sealed unsafe partial class App
                 TurnPage((short)((wParam.Value >> 16) & 0xFFFF) > 0 ? -1 : 1);
                 return true;
 
+            case KeyHook.WM_APP_KEY when hwnd == Overlay && IsOpen && _dragging:
+                // Mid-drag only Esc counts (it closes the wheel; the drag carries on). Choosing is done by dropping.
+                if ((VIRTUAL_KEY)(ushort)wParam.Value == VIRTUAL_KEY.VK_ESCAPE) Close();
+                return true;
+
             case KeyHook.WM_APP_KEY when hwnd == Overlay && IsOpen:
                 if (_view.Query) OnQueryKey((uint)wParam.Value, (uint)(lParam.Value & 0xFFFF));
                 else OnKey((VIRTUAL_KEY)(ushort)wParam.Value);
@@ -512,6 +518,14 @@ internal sealed unsafe partial class App
 
             case WM_APP_CLIPS when hwnd == _tray:
                 if (IsOpen && _view.Clips) { LoadClipThumbs(); Renderer.Draw(_view); Renderer.Commit(); }
+                return true;
+
+            case PInvoke.WM_TIMER when hwnd == _tray && wParam.Value == DropTimerId:
+                OnDropTimer();
+                return true;
+
+            case WM_APP_ESTIMATE when hwnd == _tray:
+                OnEstimate();
                 return true;
 
             case PInvoke.WM_TIMER when hwnd == _tray && wParam.Value == ClipTimerId:
@@ -609,6 +623,7 @@ internal sealed unsafe partial class App
         PInvoke.SetWindowPos(Overlay, HWND.Null, 0, 0, 0, 0,
             SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_HIDEWINDOW | SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOZORDER);
         KeyHook.Uninstall();
+        EndDrop();
         ResetSubs();
         _view.Hover = -1;
         _view.RowHover = -1;
@@ -645,7 +660,7 @@ internal sealed unsafe partial class App
 
     private int RowHitClient(LPARAM lParam)
     {
-        if (!Renderer.HasRow || _view.Clips || _view.Query) return -1;
+        if (!Renderer.HasRow || _view.Clips || _view.Query || _view.Drop) return -1;
         int x = (short)(lParam.Value & 0xFFFF) + _work.left, y = (short)((lParam.Value >> 16) & 0xFFFF) + _work.top;
         float scale = 96f / Renderer.Dpi;
         return Renderer.RowHit((x - _centerX) * scale, (y - _centerY) * scale);
@@ -659,7 +674,7 @@ internal sealed unsafe partial class App
 
     private void OnKey(VIRTUAL_KEY vk)
     {
-        if (vk == VIRTUAL_KEY.VK_TAB && !_view.Clips)
+        if (vk == VIRTUAL_KEY.VK_TAB && !_view.Clips && !_view.Drop)
         {
             int n = _wheelSets.Count;
             if (n > 1) SwitchWheel((_wheel + (KeyHook.IsDown(VIRTUAL_KEY.VK_SHIFT) ? n - 1 : 1)) % n);

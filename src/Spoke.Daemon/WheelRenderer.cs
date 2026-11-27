@@ -34,6 +34,8 @@ internal sealed class WheelView
     public bool Query;
     public string QueryText = "";
     public string QueryEngine = "";
+    /// <summary>Drop mode: files are being dragged onto the wheel (the wheel row is hidden).</summary>
+    public bool Drop;
 }
 
 /// <summary>
@@ -51,6 +53,10 @@ internal sealed unsafe class WheelRenderer
     private const int MaxSlices = Spoke.Core.ConfigLoader.MaxSlices;
     /// <summary>Shown in the hub when nothing is hovered.</summary>
     public string WheelName = "Spoke";
+    /// <summary>Replaces the hub's "1–n · arrows · Esc" line (drop mode: "photo.heic · 4.9 MB").</summary>
+    public string? HubHint;
+    /// <summary>Drop mode: the dropped files' size now, shown as "4.9 MB → 1.4 MB" for the hovered format.</summary>
+    public string? HubFrom;
 
     private readonly Gfx _g;
     private readonly Surface _surface;
@@ -408,7 +414,7 @@ internal sealed unsafe class WheelRenderer
         else if (Ring is { } r && (v.RingHover >= 0 || v.Hover < 0)) DrawRingHub(r, v.RingHover, accent);
         else DrawMainHub(hover, accent);
         if (v.Query) DrawQuery(v, accent);
-        else if (HasRow && Ring == null && !v.Clips) DrawRow(v);
+        else if (HasRow && Ring == null && !v.Clips && !v.Drop) DrawRow(v);
     }
 
     /// <summary>The wheel row: the showing wheel as a solid pill, the others as quiet ones.</summary>
@@ -502,12 +508,15 @@ internal sealed unsafe class WheelRenderer
         }
         else
         {
-            // Colour tile + glyph, then the label.
+            // Colour tile + glyph, then the label (and the badge line under it, moved up to make room).
+            string? badge = _slices[i].Badge;
+            if (badge != null) iy -= 7;
             _g.FillRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(hue, hov ? t.TileAlphaHover : t.TileAlpha));
             if (hov) _g.StrokeRound(ix - 16, iy - 27, ix + 16, iy + 5, 10, WithAlpha(glow, 0.55f), 1f);
             if (_slices[i].Icon != null) DrawIcon(_slices[i].Icon, ix, iy - 11, 22);
             else _g.Text(_glyphs[i], _fmtGlyph, ix, iy - 11, 32, 32, hue);
             _g.Text(_slices[i].Label, _fmtLabel, ix, iy + 18, 110, 16, hov ? t.Text : t.TextDim);
+            if (badge != null) _g.Text(badge, _fmtHubSub, ix, iy + 32, 100, 13, hov ? glow : t.TextFaint);
         }
 
         if (hov) _g.SetTranslate(E, E);
@@ -582,14 +591,15 @@ internal sealed unsafe class WheelRenderer
             if (s.Icon != null) DrawIcon(s.Icon, 0, -24, 24);
             else _g.Text(_glyphs[hover], _fmtGlyphHub, 0, -24, 40, 26, Theme.Hue(hover));
             _g.Text(s.Label, _fmtHub, 0, 2, 112, 20, t.Text);
-            _g.Text(s.Detail, _fmtHubSub, 0, 20, 112, 13, t.TextFaint);
+            string detail = s.Badge is { } b && b.StartsWith('≈') && HubFrom != null ? $"{HubFrom} → {b[2..]}" : s.Badge ?? s.Detail;
+            _g.Text(detail, _fmtHubSub, 0, 20, 112, 13, t.TextFaint);
         }
         else
         {
             _g.FillCircle(0, -22, 4f, accent);
             _g.Text(WheelName, _fmtHub, 0, 0, 112, 20, t.Text);
             int n = Math.Min(_slices.Length, 9);
-            _g.Text(HasRow ? $"1–{n} · Tab wheels · Esc" : $"1–{n} · arrows · Esc", _fmtHubSub, 0, 19, 118, 13, t.TextFaint);
+            _g.Text(HubHint ?? (HasRow ? $"1–{n} · Tab wheels · Esc" : $"1–{n} · arrows · Esc"), _fmtHubSub, 0, 19, 118, 13, t.TextFaint);
         }
     }
 
