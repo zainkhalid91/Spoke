@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "accent": "theme",
+  "wheels": [
+    { "name": "Spoke", "slices": [
+      { "type": "tool", "tool": "screenshot" },
+      { "type": "tool", "tool": "colorPicker" },
+      { "type": "tool", "tool": "clips" },
+      { "type": "tool", "tool": "files" },
+      { "type": "tool", "tool": "text" },
+      { "type": "app", "label": "Terminal", "detail": "Windows Terminal", "target": "wt.exe" },
+      { "type": "url", "label": "GitHub", "target": "https://github.com" },
+      { "type": "folder", "label": "Downloads", "target": "%USERPROFILE%\\Downloads" }
+    ] },
+    { "name": "Dev", "slices": [
+      { "type": "app", "label": "VS Code", "target": "code.exe" },
+      { "type": "app", "label": "Terminal", "target": "wt.exe" },
+      { "type": "folder", "label": "Projects", "target": "D:\\Projects" },
+      { "type": "url", "label": "GitHub", "target": "https://github.com" },
+      { "type": "search", "label": "Docs", "engine": "google" },
+      { "type": "text", "label": "Sign-off", "text": "Thanks!" }
+    ] },
+    { "name": "Media", "slices": [
+      { "type": "url", "label": "YouTube", "target": "https://youtube.com" },
+      { "type": "url", "label": "Spotify", "target": "https://open.spotify.com" },
+      { "type": "tool", "tool": "system" },
+      { "type": "folder", "label": "Videos", "target": "%USERPROFILE%\\Videos" }
+    ] }
+  ]
+}

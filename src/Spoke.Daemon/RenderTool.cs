@@ -6,7 +6,7 @@ using Windows.Win32.UI.WindowsAndMessaging;
 namespace Spoke.Daemon;
 
 /// <summary>
-/// <c>Spoke.exe --render out.png [--theme Onyx] [--hover 2] [--ring 3] [--ring-hover 1] [--wheel] [--scale 1.5]</c>:
+/// <c>Spoke.exe --render out.png [--theme Onyx] [--hover 2] [--ring 3] [--ring-hover 1] [--wheel] [--scale 1.5] [--transparent]</c>:
 /// draws the wheel from the current settings.json into a PNG, offscreen. For checking looks and layout
 /// without opening anything on screen. <c>--ring N</c> opens a sample band (the text tools) on slice N.
 /// </summary>
@@ -91,7 +91,7 @@ internal static unsafe class RenderTool
             Console.WriteLine($"switch x{runs}: p50 {times[runs / 2]:0.00} ms, p95 {times[(int)(runs * 0.95)]:0.00} ms, max {times[^1]:0.00} ms");
         }
 
-        var pixels = r.Snapshot(view, theme.Light ? 0xC9CED6u : 0x2B3440u);
+        var pixels = r.Snapshot(view, args.Contains("--transparent") ? null : theme.Light ? 0xC9CED6u : 0x2B3440u);
         var png = new Imaging().EncodePng(pixels);
         File.WriteAllBytes(output, png);
         Console.WriteLine($"{output}: {pixels.Width}×{pixels.Height}, {theme.Name}{(ring >= 0 ? $", band on slice {ring + 1}" : "")}");

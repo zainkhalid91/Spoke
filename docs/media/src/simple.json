@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "accent": "theme",
+  "wheels": [
+    { "name": "Spoke", "slices": [
+      { "type": "tool", "tool": "screenshot" },
+      { "type": "tool", "tool": "colorPicker" },
+      { "type": "tool", "tool": "clips" },
+      { "type": "app", "label": "Terminal", "detail": "Windows Terminal", "target": "wt.exe" },
+      { "type": "url", "label": "GitHub", "target": "https://github.com" },
+      { "type": "folder", "label": "Downloads", "target": "%USERPROFILE%\\Downloads" }
+    ] }
+  ]
+}

@@ -322,10 +322,11 @@ internal sealed unsafe class WheelRenderer
     /// Draws a frame into an offscreen bitmap over an opaque backdrop and returns its pixels (for
     /// <c>Spoke.exe --render</c>: checking the look without showing anything on screen).
     /// </summary>
-    public Pixels Snapshot(WheelView v, uint backdropRgb)
+    /// <param name="backdropRgb">The colour behind the wheel, or null for a transparent picture (straight alpha).</param>
+    public Pixels Snapshot(WheelView v, uint? backdropRgb)
     {
         int px = _surface.Width;
-        var bg = C(backdropRgb);
+        var bg = backdropRgb is { } rgb ? C(rgb) : default;
         var bmp = RenderToBitmap(px, () =>
         {
             var fill = bg;
@@ -349,6 +350,16 @@ internal sealed unsafe class WheelRenderer
         cpu->Unmap();
         Release(cpu);
         Release(bmp);
+        if (backdropRgb == null)
+        {
+            // D2D works premultiplied; PNG wants straight alpha.
+            for (int i = 0; i < data.Length; i += 4)
+            {
+                int a = data[i + 3];
+                if (a is 0 or 255) continue;
+                for (int c = 0; c < 3; c++) data[i + c] = (byte)Math.Min(255, data[i + c] * 255 / a);
+            }
+        }
         return new Pixels { Width = px, Height = px, Data = data };
     }
 

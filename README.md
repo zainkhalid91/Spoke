@@ -4,9 +4,15 @@ A radial command wheel for Windows. Press a shortcut, and a wheel of your apps, 
 
 Native and tiny: C# / .NET 10 Native AOT, Direct2D + DirectComposition overlay, under 30 ms to open, under 40 MB idle. Free and open source ([MIT](LICENSE)).
 
-![Spoke in its four themes: Aurora, Ember, Paper and Graphite](docs/themes.png)
+![Spoke's wheel with its features pointed out: apps, sites and folders; the hub; keyboard keys 1–8; screenshot and colour picker; image history; file and text tools; several wheels](docs/media/features.png)
 
 **[Download Spoke for Windows](https://github.com/zainkhalid91/Spoke/releases/latest)** (64-bit Windows 10 or 11): unzip anywhere, run `Spoke.exe`, press **Ctrl+Alt+Z**. Nothing to install. The build isn't code-signed yet, so SmartScreen may ask you to confirm (*More info → Run anyway*).
+
+### Make it yours
+
+![A simple wheel next to an extended wheel whose options fan out as an outer ring](docs/media/wheel-styles.png)
+
+![The five themes: Aurora, Ember, Graphite and Onyx (dark) and Paper (light)](docs/media/themes.png)
 
 **Status:** M1 done (config + real actions, below). M0 spike done (the wheel opens in 9–14 ms, focus never stolen; see [docs/SPIKE_REPORT.md](docs/SPIKE_REPORT.md)). M1a adds built-in tools and a new look:
 - **Screenshot** (slice 1): drag a region, click a window, or Space for the whole screen. Copied, saved to Pictures\Screenshots, and added to Clips.
@@ -24,10 +30,9 @@ Open the wheel with **Ctrl+Alt+Z**. Choose a slice on the ring or press 1–8; a
 
 **M3** adds **many wheels**: give each its own shortcut (Settings → Wheels), and press **Tab** / Shift+Tab or click a pill under the wheel to switch in place. **Group** slices hold up to 12 items that fan out around the slice, or with *Run every item* switched on (`"runAll": true`, `"delay": 500`) run them in order. Wheels export to and import from `.spoke` files (Settings → Wheels → ⋯, or `Start-Process -Wait Spoke.exe "--export Dev dev.spoke"` / `--import dev.spoke`); paths under your user folders become `%ENV%` forms. Icons keep the theme's colours; a Windows or custom accent only colours the highlight.
 
-<img src="docs/drop-mode.png" width="360" align="right" alt="The drop mode wheel with an estimated output size on every format" />
+![Drop mode: the format wheel with an estimated size on every slice](docs/media/drop-mode.png)
 
 **Drop mode** converts files by dragging them. Drag images from File Explorer, keep holding the mouse button, press the wheel shortcut, and the wheel opens under the pointer as a format wheel: PNG, JPEG, WebP, AVIF, HEIC, GIF, TIFF, BMP, Resize ▸ and Compress. Each slice shows the **estimated size** before you drop. A worker process encodes full-resolution tiles sampled from across the picture and scales the result up; across test photos and screenshots the average error is 5%. Drop on a slice to convert beside the original (never overwriting); hover Resize for a moment, or drop on it, to pick a size. Several files convert as a batch. Other files (PDFs, Office documents) get the Files actions instead. WebP and AVIF use `ffmpeg` on PATH. HEIC needs Microsoft's HEIF and HEVC extensions; without them the slice says so. Esc closes the wheel and the drag carries on. `Spoke.exe --estimate-check report.txt image…` compares estimates with real conversions, and `--render out.png --drop image` draws the format wheel.
-<br clear="right" />
 
 **More options as an outer ring:** Files, Text tools, Generate and System open their options as a band that fans out around the slice, so the wheel stays in view (hub shows the path, e.g. *Files ▸ Convert*; Esc or the hub goes back, the slice again folds it, arrows/digits/Enter work too). Prefer the old way? Settings → Appearance → *More options*, or `"subMenus": "wheel"`. `Spoke.exe --render out.png [--theme Onyx] [--ring 3]` draws the wheel to a PNG without showing anything.
 
